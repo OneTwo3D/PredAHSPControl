@@ -68,7 +68,7 @@ Suggested `heat_pump_efficiency` (outdoor °C → COP, normalised by its maximum
 | `internal_temperature` | `sensor.bridge0_sensors_temperature_room` | valid | keep |
 | `target_temperature` | `sensor.bridge0_room_room_heating_setpoint` | valid | keep |
 | `heating_energy` | `sensor.ashp_daily_electricity` | valid, but **includes DHW** (today 0.94 kWh = 0.12 heating + 0.82 DHW) | `sensor.ashp_heating_power_consumption_daily` (heating only, same sensor already used as `car_charging_energy` filter) |
-| `heating_active` | `binary_sensor.bridge0_unknown_climate_active_q4` | exists; meaning undocumented ("unknown") | verify against compressor/thermostat demand this winter; alternative `binary_sensor.bridge0_mode_compressor` |
+| `heating_active` | `binary_sensor.bridge0_unknown_climate_active_q4` | **verified 7 Oct: = space heating enabled, not demand** | `binary_sensor.bridge0_mode_valve_zone_main` (thermostat demand, verified) |
 | `volume_temp` | `sensor.ashp_flow_temperature_living_room_temperature` | **unavailable since 26 Sep** (Zigbee sensor offline/battery); also ignored inside `predheat:` | fix the sensor and move the key to the top level of `pred_bat:` (see note above) |
 
 ## Predbat interaction

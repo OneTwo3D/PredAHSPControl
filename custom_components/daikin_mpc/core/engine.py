@@ -208,7 +208,7 @@ class ShadowEngine:
             lwts = [self.wc_lwt(x) + self.lwt_offset_k for x in to_steps]
             fc = forecast(
                 ti,
-                bool(hz and hz > 0),
+                self._calling(s, hz),
                 to_steps,
                 sps,
                 lwts,
@@ -281,6 +281,14 @@ class ShadowEngine:
             self.cop_curve, self._cop_bins_learned = self.cop_learner.curve()
         elif day.standby_w is not None:
             self.cop_learner.update_day(day.to, 0.0, 0.0, day.standby_w)  # standby only
+
+    @staticmethod
+    def _calling(s: ValidatedSnapshot, hz: float | None) -> bool:
+        """Thermostat state at the start of the forecast: demand signal if mapped, else compressor."""
+        demand = s.get(Role.HEATING_DEMAND)
+        if demand is not None:
+            return demand > 0
+        return bool(hz and hz > 0)
 
     def _setpoint_at(self, when: datetime, current: float | None) -> float:
         v = self.setpoint_profile.get(when.hour)

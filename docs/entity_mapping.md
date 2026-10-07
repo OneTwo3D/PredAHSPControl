@@ -19,6 +19,9 @@ Status legend: **V** verified from live state/attributes · **?** needs confirma
 | Current heating deviation | `sensor.bridge0_lwt_deviation_heating` | °C | V |
 | Room heating setpoint | `sensor.bridge0_room_room_heating_setpoint` | °C | V |
 | Compressor on | `binary_sensor.bridge0_mode_compressor` | – | V (no long-term statistics: binary) |
+| Thermostat heating demand | `binary_sensor.bridge0_mode_valve_zone_main` | – | V (test 7 Oct 2026): on 0 s after the setpoint exceeded room temperature, pump +10 s, compressor +4 min; off with demand |
+| Space heating enabled | `switch.bridge0_mode_altherma_on`; `binary_sensor.bridge0_unknown_climate_active_q4` follows it | – | V: q4 is *not* demand |
+| 3-way valve | `binary_sensor.bridge0_dhw_valve_dhw_tank` | – | V: on = tank position (rest position), off = radiators |
 | Compressor frequency | `sensor.bridge0_mode_compressor_rpm` | Hz, measurement | V. Usable for run/partial-hour detection in LTS |
 | Defrost | `binary_sensor.bridge0_mode_defrost_active` | – | V (no LTS) |
 | DHW running | `binary_sensor.bridge0_dhw_dhw_demand` | – | V: on exactly during DHW runs (e.g. 03:52–04:15 daily, matches compressor). `_dhw_dhw` = DHW function enabled (always on), `_dhw_valve_dhw_tank` always on, `_dhw_dhw_related_q` always off — not usable |

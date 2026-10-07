@@ -31,6 +31,7 @@ STATES = {
     "binary_sensor.bridge0_mode_defrost_active": "off",
     "binary_sensor.bridge0_dhw_dhw_demand": "off",
     "switch.bridge0_mode_altherma_on": "on",
+    "binary_sensor.bridge0_mode_valve_zone_main": "on",
     "sensor.bridge0_mode_date_time_daikin": "We 2026-10-07 09:46",
     "sensor.kwh_meter_power": "420",
     "sensor.kwh_meter_energy_import": "3909.6",

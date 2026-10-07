@@ -37,7 +37,12 @@ _ANY = selector.EntitySelector(selector.EntitySelectorConfig())
 _TEXT = selector.TextSelector()
 
 _OPTIONAL_EXTERNAL = {CONF_PREDHEAT_H1, CONF_PREDHEAT_H8}
-_BINARY_KEYS = {Role.DEFROST.value, Role.DHW_ACTIVE.value, Role.HEATING_ENABLED.value}
+_BINARY_KEYS = {
+    Role.DEFROST.value,
+    Role.DHW_ACTIVE.value,
+    Role.HEATING_ENABLED.value,
+    Role.HEATING_DEMAND.value,
+}
 
 
 def _schema() -> vol.Schema:

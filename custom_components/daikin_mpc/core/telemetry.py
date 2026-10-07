@@ -33,6 +33,7 @@ class Role(StrEnum):
     DEFROST = "defrost"  # binary
     DHW_ACTIVE = "dhw_active"  # binary
     HEATING_ENABLED = "heating_enabled"  # binary: space heating switched on
+    HEATING_DEMAND = "heating_demand"  # binary: room thermostat calls for heat (main-zone valve)
     EXT_W = "ext_w"  # external electricity meter power (heat pump incl. DHW and standby), W
     EXT_KWH = "ext_kwh"  # external electricity meter cumulative energy, kWh
     DHW_ELEC_KWH = "dhw_elec_kwh"  # Daikin cumulative DHW electricity, kWh (to split the external meter)
@@ -48,7 +49,9 @@ REQUIRED_ROLES: tuple[Role, ...] = (
     Role.HEAT_KWH,
     Role.ELEC_KWH,
 )
-BINARY_ROLES: frozenset[Role] = frozenset({Role.DEFROST, Role.DHW_ACTIVE, Role.HEATING_ENABLED})
+BINARY_ROLES: frozenset[Role] = frozenset(
+    {Role.DEFROST, Role.DHW_ACTIVE, Role.HEATING_ENABLED, Role.HEATING_DEMAND}
+)
 COUNTER_ROLES: frozenset[Role] = frozenset(
     {Role.HEAT_KWH, Role.ELEC_KWH, Role.DHW_HEAT_KWH, Role.BUH_KWH, Role.EXT_KWH, Role.DHW_ELEC_KWH}
 )

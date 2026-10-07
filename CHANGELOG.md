@@ -5,6 +5,14 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.2.5] - 2026-10-07
+
+### Added
+- Optional *Thermostat heating demand* role (suggested `binary_sensor.bridge0_mode_valve_zone_main`,
+  verified in a live test): the forecast starts from the actual thermostat state instead of inferring it
+  from the compressor (which lags demand by several minutes and cycles on water temperature).
+  Existing installs: Reconfigure; the field is pre-filled.
+
 ## [0.2.4] - 2026-10-07
 
 ### Fixed

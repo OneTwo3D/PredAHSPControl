@@ -226,3 +226,13 @@ def test_cop_learner_learns_and_persists():
     cl2 = CopLearner(prior)
     assert cl2.load_dict(cl.to_dict()) and cl2.curve()[0] == curve
     assert cl.standby_w is not None and 19 < cl.standby_w < 20
+
+
+def test_forecast_start_state_uses_demand_signal():
+    eng = ShadowEngine(EngineConfig())
+    t = T0 + timedelta(hours=3)
+    # compressor off but thermostat calling -> forecast starts with heating on
+    st = eng.process(snap(t, hz=0.0, heating_demand=1.0, ti=20.0, room_set=21.0), None)
+    assert st.forecast is not None and st.forecast.running[0]
+    st = eng.process(snap(t + timedelta(minutes=5), hz=30.0, heating_demand=0.0, ti=21.4), None)
+    assert st.forecast is not None and not st.forecast.running[0]

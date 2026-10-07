@@ -28,7 +28,8 @@
           "heartbeat": "Bridge heartbeat (entity that changes every minute, e.g. Daikin clock)",
           "ext_w": "External heat pump meter power (W, optional, recommended)",
           "ext_kwh": "External heat pump meter energy (kWh, optional, recommended)",
-          "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)"
+          "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)",
+          "heating_demand": "Thermostat heating demand (main-zone valve)"
         }
       },
       "reconfigure": {
@@ -58,7 +59,8 @@
           "heartbeat": "Bridge heartbeat (entity that changes every minute, e.g. Daikin clock)",
           "ext_w": "External heat pump meter power (W, optional, recommended)",
           "ext_kwh": "External heat pump meter energy (kWh, optional, recommended)",
-          "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)"
+          "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)",
+          "heating_demand": "Thermostat heating demand (main-zone valve)"
         }
       }
     },
