@@ -5,6 +5,22 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.3.0] - 2026-10-07
+
+### Added — M3 shadow optimiser (recommendations only, nothing is sent to the heat pump)
+- Every 15 minutes a 24 h plan of hourly room setpoints (0.5 °C steps) that minimises electricity cost
+  while keeping the room between **20.0 and 22.0 °C** (configurable). No fixed night setback: lower night
+  setpoints only when they save money.
+- Prices from Predbat (`predbat.rates`, `predbat.rates_export`, including VPP events) with the configured
+  tariff as fallback; round-trip efficiency from Predbat's loss settings.
+- Battery- and export-aware pricing (default): energy outside the cheap window is valued at
+  `min(import, max(cheap rate / efficiency, export rate))`, i.e. the opportunity cost of not exporting.
+  Raw import tariff selectable.
+- New sensors: *Recommended room setpoint* (with the hourly plan), *Expected saving 24h* (model estimate vs
+  the current schedule), *Recommendation* (plain-language reason).
+- Options: lowest/highest room temperature, price basis, fallback import/export tariffs.
+- `tools/m3_replay.py` and `docs/m3_replay_report.md`: replay on winter 2025/26.
+
 ## [0.2.7] - 2026-10-07
 
 ### Fixed

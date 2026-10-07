@@ -16,9 +16,11 @@ import numpy as np
 
 from .accumulator import DayAggregator, DayRecord, HourAccumulator, HourRecord
 from .cop_learner import CopLearner
+from .cost_model import CostProvider
 from .emitter_model import RadiatorParams
 from .heatpump_model import CopCurve
 from .learner import BuildingLearner, LearnerConfig
+from .optimiser import OptimiserConfig, PlanInputs, Recommendation, recommend
 from .predictor import Forecast, PlantParams, forecast
 from .telemetry import Role, ValidatedSnapshot
 from .thermal_model import ThermalParams
@@ -96,6 +98,8 @@ class EngineStatus:
     standby_w: float = 0.0
     cop_source: str = "prior"
     cop_learned_days: int = 0
+    recommendation: Recommendation | None = None
+    cost_source: str = ""
 
 
 @dataclass
@@ -295,6 +299,43 @@ class ShadowEngine:
         if v is not None:
             return round(v * 2) / 2  # Daikin setpoints are in 0.5 K steps
         return current if current is not None else 20.0
+
+    def recommend(
+        self,
+        s: ValidatedSnapshot,
+        to_forecast: list[tuple[datetime, float]] | None,
+        cost: CostProvider,
+        cfg: OptimiserConfig,
+    ) -> Recommendation | None:
+        """Shadow recommendation: cheapest hourly setpoint plan within the comfort range.
+
+        Pure computation on the current learned models; it never changes the engine's state and never
+        issues commands. Returns None when telemetry is incomplete.
+        """
+        ti, to = s.get(Role.TI), s.get(Role.TO)
+        if not s.complete or ti is None or to is None:
+            return None
+        t = s.time
+        to_steps, _ = self._to_steps(t, to, to_forecast)
+        per_h = round(1 / STEP_H)
+        hours = min(cfg.horizon_h, len(to_steps) // per_h)
+        sp_now = s.get(Role.ROOM_SET)
+        baseline = [self._setpoint_at(t + timedelta(hours=h), sp_now) for h in range(hours)]
+        enabled = s.get(Role.HEATING_ENABLED)
+        inp = PlanInputs(
+            start=t,
+            ti0_c=ti,
+            running0=self._calling(s, s.get(Role.HZ)),
+            current_setpoint_c=sp_now if sp_now is not None else baseline[0],
+            heating_enabled=bool(enabled if enabled is not None else True),
+            to_c=to_steps,
+            lwt_set_c=[self.wc_lwt(x) + self.lwt_offset_k for x in to_steps],
+            rate_p=[
+                cost.marginal_rate(t + timedelta(hours=STEP_H * (i + 0.5))) for i in range(len(to_steps))
+            ],
+            baseline_setpoint_c=baseline,
+        )
+        return recommend(inp, self.learner.params, self.plant, self.cop, cfg)
 
     @staticmethod
     def _to_steps(

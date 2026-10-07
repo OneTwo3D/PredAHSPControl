@@ -77,6 +77,50 @@ def _energy_attrs(s: EngineStatus) -> dict[str, Any]:
     }
 
 
+def _plan_attrs(s: EngineStatus) -> dict[str, Any]:
+    r = s.recommendation
+    if r is None:
+        return {"cost_source": s.cost_source}
+    per_h = 4
+    start = s.time.replace(second=0, microsecond=0)
+    hourly = [
+        {
+            "start": (start + timedelta(hours=h)).isoformat(),
+            "setpoint": sp,
+            "baseline_setpoint": r.baseline.setpoints_c[h] if h < len(r.baseline.setpoints_c) else None,
+            "room_c": round(r.plan.ti_c[min((h + 1) * per_h, len(r.plan.ti_c) - 1)], 2),
+            "elec_kwh": round(sum(r.plan.elec_kwh[h * per_h : (h + 1) * per_h]), 3),
+        }
+        for h, sp in enumerate(r.plan.setpoints_c)
+    ]
+    return {
+        "reason": r.reason,
+        "schedule": r.details.get("blocks"),
+        "feasible": r.plan.feasible,
+        "room_min_c": round(r.plan.min_ti_c, 2),
+        "room_max_c": round(r.plan.max_ti_c, 2),
+        "cost_source": s.cost_source,
+        "mode": "shadow (not applied)",
+        "plan": hourly,
+    }
+
+
+def _saving_attrs(s: EngineStatus) -> dict[str, Any]:
+    r = s.recommendation
+    if r is None:
+        return {}
+    return {
+        "plan_cost_p": round(r.plan.cost_p, 1),
+        "baseline_cost_p": round(r.baseline.cost_p, 1),
+        "plan_kwh": round(r.plan.energy_kwh(), 2),
+        "baseline_kwh": round(r.baseline.energy_kwh(), 2),
+        "plan_compressor_starts": r.plan.starts,
+        "baseline_compressor_starts": r.baseline.starts,
+        "baseline_room_min_c": r.details.get("baseline_min_c"),
+        "note": "model estimate for the next 24 h versus the current schedule; not measured savings",
+    }
+
+
 def _total_elec(s: EngineStatus) -> float | None:
     if not s.forecast:
         return None
@@ -84,6 +128,30 @@ def _total_elec(s: EngineStatus) -> float | None:
 
 
 SENSORS: tuple[MpcSensorDescription, ...] = (
+    MpcSensorDescription(
+        key="recommended_setpoint",
+        name="Recommended room setpoint",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda s: s.recommendation.setpoint_now_c if s.recommendation else None,
+        attrs_fn=_plan_attrs,
+    ),
+    MpcSensorDescription(
+        key="expected_saving_24h",
+        name="Expected saving 24h",
+        native_unit_of_measurement="p",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda s: round(s.recommendation.saving_p, 1) if s.recommendation else None,
+        attrs_fn=_saving_attrs,
+    ),
+    MpcSensorDescription(
+        key="recommendation_reason",
+        name="Recommendation",
+        value_fn=lambda s: s.recommendation.reason[:255] if s.recommendation else None,
+    ),
     MpcSensorDescription(
         key="status",
         name="Status",
@@ -218,7 +286,9 @@ async def async_setup_entry(
 class MpcSensor(CoordinatorEntity[DaikinMpcCoordinator], SensorEntity):
     _attr_has_entity_name = True
     # Large or fast-changing attributes are kept out of the recorder database.
-    _unrecorded_attributes = frozenset({"hourly", "last_day", "hours_by_class", "issues"})
+    _unrecorded_attributes = frozenset(
+        {"hourly", "last_day", "hours_by_class", "issues", "plan", "schedule", "reason"}
+    )
     entity_description: MpcSensorDescription
 
     def __init__(self, coordinator: DaikinMpcCoordinator, description: MpcSensorDescription) -> None:

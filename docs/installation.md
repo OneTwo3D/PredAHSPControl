@@ -39,6 +39,16 @@ model priors and a learning on/off switch.
 Learned state is stored in `/config/.storage/daikin_mpc.<entry_id>` (versioned JSON) and survives
 restarts; removing the integration discards it.
 
+## Recommendations (M3, v0.3.0)
+
+| Entity | Meaning |
+|---|---|
+| `sensor.daikin_mpc_recommended_room_setpoint` | Setpoint the optimiser would use now; attribute `plan` holds the hourly plan, `schedule` a summary |
+| `sensor.daikin_mpc_expected_saving_24h` | Model estimate (p) versus the current schedule over 24 h; attributes with both costs, kWh and starts |
+| `sensor.daikin_mpc_recommendation` | Plain-language explanation |
+
+Recommendations are **not applied**. Comfort range, price basis and fallback tariffs are under ⋮ → Configure.
+
 ## Limits of this release
 
 - Learning updates once per complete day (≥ 22 valid hours) with heating; days without heating do not

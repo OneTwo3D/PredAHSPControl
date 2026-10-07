@@ -146,7 +146,17 @@ async def test_options_flow(hass: HomeAssistant, weather_calls) -> None:
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {"learning_enabled": False, "prior_ua_w_per_k": 100, "prior_gains_w": 400, "prior_c_kwh_per_k": 3.5},
+        {
+            "learning_enabled": False,
+            "prior_ua_w_per_k": 100,
+            "prior_gains_w": 400,
+            "prior_c_kwh_per_k": 3.5,
+            "room_min_c": 20.0,
+            "room_max_c": 22.0,
+            "cost_basis": "battery",
+            "fallback_import_tariff": "00:00-05:00=7.6, 05:00-24:00=34.87",
+            "fallback_export_tariff": "00:00-05:00=2.0, 05:00-24:00=12.0",
+        },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -197,3 +207,53 @@ async def test_stale_predheat_forecast_is_not_scored(hass: HomeAssistant, weathe
         return_value=dt_util.utcnow() + timedelta(hours=1),
     ):
         assert coord._external() == {}
+
+
+async def test_options_reject_bad_tariff_and_range(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "learning_enabled": True,
+            "prior_ua_w_per_k": 94,
+            "prior_gains_w": 440,
+            "prior_c_kwh_per_k": 3.0,
+            "room_min_c": 22.0,
+            "room_max_c": 21.0,
+            "cost_basis": "battery",
+            "fallback_import_tariff": "00:00-05:00=7.6",
+            "fallback_export_tariff": "00:00-24:00=12",
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"room_max_c": "room_range", "fallback_import_tariff": "bad_tariff"}
+
+
+async def test_recommendation_uses_predbat_rates(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    now = dt_util.now().replace(minute=0, second=0, microsecond=0)
+    rates = {(now + timedelta(hours=h)).isoformat(): (7.6 if h % 24 < 5 else 34.87) for h in range(0, 48)}
+    export = {(now + timedelta(hours=h)).isoformat(): 12.0 for h in range(0, 48)}
+    hass.states.async_set("predbat.rates", "7.6", {"results": rates})
+    hass.states.async_set("predbat.rates_export", "12.0", {"results": export})
+    for e in (
+        "input_number.predbat_battery_loss",
+        "input_number.predbat_battery_loss_discharge",
+        "input_number.predbat_inverter_loss",
+    ):
+        hass.states.async_set(e, "0.03")
+    entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    rec = hass.states.get("sensor.daikin_mpc_recommended_room_setpoint")
+    assert rec is not None and 20.0 <= float(rec.state) <= 22.0
+    assert rec.attributes["cost_source"].startswith("Predbat rates")
+    assert len(rec.attributes["plan"]) == 24
+    assert hass.states.get("sensor.daikin_mpc_expected_saving_24h") is not None
+    assert hass.states.get("sensor.daikin_mpc_recommendation").state

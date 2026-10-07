@@ -18,20 +18,37 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_C,
+    CONF_COST_BASIS,
     CONF_GAINS,
     CONF_LEARNING,
     CONF_PREDHEAT_H1,
     CONF_PREDHEAT_H8,
+    CONF_ROOM_MAX,
+    CONF_ROOM_MIN,
+    CONF_TARIFF_EXPORT,
+    CONF_TARIFF_IMPORT,
     CONF_UA,
     CONF_WEATHER,
+    DEFAULT_OPTIMISER,
     DEFAULT_PRIORS,
     DOMAIN,
+    OPTIMISE_INTERVAL,
+    PREDBAT_LOSSES,
+    PREDBAT_RATES,
+    PREDBAT_RATES_EXPORT,
     SAVE_DELAY_S,
     STORAGE_VERSION,
     UPDATE_INTERVAL,
     WEATHER_REFRESH,
 )
+from .core.cost_model import (
+    CostProvider,
+    efficiency_from_predbat,
+    parse_rate_series,
+    parse_tariff,
+)
 from .core.engine import EngineConfig, EngineStatus, ShadowEngine
+from .core.optimiser import OptimiserConfig, Recommendation
 from .core.telemetry import BINARY_ROLES, Reading, Role, Snapshot, validate
 
 if TYPE_CHECKING:
@@ -46,7 +63,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=UPDATE_INTERVAL)
-        opts = {**DEFAULT_PRIORS, **entry.options}
+        opts = {**DEFAULT_PRIORS, **DEFAULT_OPTIMISER, **entry.options}
         self.engine = ShadowEngine(
             EngineConfig(
                 ua_w_per_k=float(opts[CONF_UA]),
@@ -61,6 +78,18 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         self._weather_fetched: datetime | None = None
         self.weather_error: str | None = None
         self.load_warnings: list[str] = []
+        self.opt_cfg = OptimiserConfig(
+            room_min_c=float(opts[CONF_ROOM_MIN]),
+            room_max_c=float(opts[CONF_ROOM_MAX]),
+            setpoints=_setpoint_grid(float(opts[CONF_ROOM_MIN]), float(opts[CONF_ROOM_MAX])),
+        )
+        self.cost_basis = str(opts[CONF_COST_BASIS])
+        self.fallback_import = parse_tariff(str(opts[CONF_TARIFF_IMPORT]))
+        self.fallback_export = parse_tariff(str(opts[CONF_TARIFF_EXPORT]))
+        self.recommendation: Recommendation | None = None
+        self.cost_source = ""
+        self.optimiser_error: str | None = None
+        self._last_optimise: datetime | None = None
 
     async def _async_setup(self) -> None:
         stored = await self._store.async_load()
@@ -151,5 +180,57 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             status = self.engine.process(snap, self._weather, self._external())
         except Exception as err:  # never let a model error take HA down; surface it instead
             raise UpdateFailed(f"engine error: {err}") from err
+        await self._async_optimise(now, snap)
+        status.recommendation = self.recommendation
+        status.cost_source = self.cost_source
         self._store.async_delay_save(self.engine.to_dict, SAVE_DELAY_S)
         return status
+
+    def _cost_provider(self) -> CostProvider:
+        """Prices from Predbat when available; the configured tariff only as fallback."""
+
+        def series(entity_id: str) -> list[tuple[datetime, float]] | None:
+            st = self.hass.states.get(entity_id)
+            return parse_rate_series(st.attributes.get("results")) if st is not None else None
+
+        eff = 0.9
+        try:
+            losses = [float(self.hass.states.get(e).state) for e in PREDBAT_LOSSES]  # type: ignore[union-attr]
+            eff = efficiency_from_predbat(*losses)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return CostProvider(
+            tariff=self.fallback_import,
+            export_tariff=self.fallback_export,
+            basis=self.cost_basis,
+            round_trip_efficiency=eff,
+            series=series(PREDBAT_RATES),
+            export_series=series(PREDBAT_RATES_EXPORT),
+        )
+
+    async def _async_optimise(self, now: datetime, snap: Any) -> None:
+        if self._last_optimise is not None and now - self._last_optimise < OPTIMISE_INTERVAL:
+            return
+        self._last_optimise = now
+        cost = self._cost_provider()
+        self.cost_source = cost.source
+        try:
+            self.recommendation = await self.hass.async_add_executor_job(
+                self.engine.recommend, snap, self._weather, cost, self.opt_cfg
+            )
+            self.optimiser_error = None
+        except Exception as err:  # the optimiser is advisory; never break telemetry/learning
+            _LOGGER.warning("Daikin MPC optimiser failed: %s", err)
+            self.optimiser_error = str(err)
+            self.recommendation = None
+
+
+def _setpoint_grid(lo: float, hi: float) -> tuple[float, ...]:
+    """Daikin setpoints in 0.5 K steps within [lo, hi]."""
+    start = round(lo * 2 + 0.499) / 2
+    out: list[float] = []
+    v = start
+    while v <= hi + 1e-9:
+        out.append(round(v, 1))
+        v += 0.5
+    return tuple(out) or (round(lo * 2) / 2,)

@@ -52,6 +52,38 @@ class Forecast:
         return sum(self.heat_wh[:n]) / 1000, sum(self.elec_wh[:n]) / 1000
 
 
+def plant_step(
+    ti: float,
+    running: bool,
+    to: float,
+    sp: float,
+    lwt_set: float,
+    heating_enabled: bool,
+    building: ThermalParams,
+    plant: PlantParams,
+    step_h: float,
+) -> tuple[float, bool, float]:
+    """Advance one step: thermostat decision, heat delivered, room temperature.
+
+    Returns ``(new room temperature, thermostat calling, heat delivered in W)``.
+    """
+    if heating_enabled:
+        if running and ti >= sp + plant.hysteresis_off_k:
+            running = False
+        elif not running and ti <= sp - plant.hysteresis_on_k:
+            running = True
+    else:
+        running = False
+    q = 0.0
+    if running:
+        mod = plant.rt_modulation_gain_k_per_k * (sp - ti)
+        mod = max(-plant.rt_modulation_max_k, min(plant.rt_modulation_max_k, mod))
+        lwt = max(lwt_set + mod, plant.min_lwt_c)
+        mwt = lwt - plant.flow_return_dt_k / 2
+        q = min(plant.q_max_w, plant.radiator.output_w(mwt, ti))
+    return step(ti, to, q, step_h, building), running, q
+
+
 def forecast(
     ti0_c: float,
     running0: bool,
@@ -69,21 +101,7 @@ def forecast(
     running = running0 and heating_enabled
     out_t, out_q, out_e, out_r = [ti], [], [], []
     for to, sp, lwt_set in zip(to_c, setpoint_c, lwt_set_c, strict=True):
-        if heating_enabled:
-            if running and ti >= sp + plant.hysteresis_off_k:
-                running = False
-            elif not running and ti <= sp - plant.hysteresis_on_k:
-                running = True
-        else:
-            running = False
-        q = 0.0
-        if running:
-            mod = plant.rt_modulation_gain_k_per_k * (sp - ti)
-            mod = max(-plant.rt_modulation_max_k, min(plant.rt_modulation_max_k, mod))
-            lwt = max(lwt_set + mod, plant.min_lwt_c)
-            mwt = lwt - plant.flow_return_dt_k / 2
-            q = min(plant.q_max_w, plant.radiator.output_w(mwt, ti))
-        ti = step(ti, to, q, step_h, building)
+        ti, running, q = plant_step(ti, running, to, sp, lwt_set, heating_enabled, building, plant, step_h)
         out_t.append(ti)
         out_q.append(q * step_h)
         out_e.append(q * step_h / max(cop(to), 1.0) if q > 0 else 0.0)

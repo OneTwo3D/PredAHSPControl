@@ -269,7 +269,9 @@ Delivered: HA integration `custom_components/daikin_mpc` v0.2 (config/options fl
 Config flow, coordinator (5-min cycle), freshness/units validation, interval classification, persistence, RLS learners seeded from M1 priors, prediction sensors, diagnostics.
 Acceptance: installs/unloads cleanly; predictions and errors visible; invalid data rejected.
 
-### M3 — Shadow MPC
+### M3 — Shadow MPC ✅ build (7 Oct 2026); tuning pending heating-season data
+Delivered v0.3.0: hourly setpoint optimiser (DP with state merging, 0.1–0.3 s per 24 h plan), comfort range 20–22 °C as hard limits, Predbat import/export prices incl. VPP events, battery/export-aware marginal price, explanations, sensors, options, replay on last winter (`docs/m3_replay_report.md`). Still to do after 2–3 weeks of heating data: calibrate thermostat hysteresis, RT-modulation gain and cycling from `valve_zone_main`/compressor-start data, tune weights, agree acceptance criteria for M4.
+
 Thermostat model, DP optimiser, tariff-only cost, explanations, replay tool.
 Acceptance: replay and ≥2 weeks of live shadow over a range of outdoor temperatures; recommendations respect comfort/offset/timing; runtime bounded; agreed error thresholds met.
 

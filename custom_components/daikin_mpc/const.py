@@ -52,3 +52,26 @@ SUGGESTED: Final[dict[str, str]] = {
 }
 
 DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 440.0, CONF_C: 3.0}
+
+# M3 shadow optimiser
+CONF_ROOM_MIN: Final = "room_min_c"
+CONF_ROOM_MAX: Final = "room_max_c"
+CONF_COST_BASIS: Final = "cost_basis"
+CONF_TARIFF_IMPORT: Final = "fallback_import_tariff"
+CONF_TARIFF_EXPORT: Final = "fallback_export_tariff"
+DEFAULT_OPTIMISER: Final = {
+    CONF_ROOM_MIN: 20.0,
+    CONF_ROOM_MAX: 22.0,
+    CONF_COST_BASIS: "battery",
+    CONF_TARIFF_IMPORT: "00:00-05:00=7.6, 05:00-24:00=34.87",
+    CONF_TARIFF_EXPORT: "00:00-05:00=2.0, 05:00-24:00=12.0",
+}
+# Predbat entities read for prices and losses (published by the Predbat add-on while it runs)
+PREDBAT_RATES: Final = "predbat.rates"
+PREDBAT_RATES_EXPORT: Final = "predbat.rates_export"
+PREDBAT_LOSSES: Final = (
+    "input_number.predbat_battery_loss",
+    "input_number.predbat_battery_loss_discharge",
+    "input_number.predbat_inverter_loss",
+)
+OPTIMISE_INTERVAL: Final = timedelta(minutes=15)

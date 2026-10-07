@@ -14,16 +14,23 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_C,
+    CONF_COST_BASIS,
     CONF_GAINS,
     CONF_LEARNING,
     CONF_PREDHEAT_H1,
     CONF_PREDHEAT_H8,
+    CONF_ROOM_MAX,
+    CONF_ROOM_MIN,
+    CONF_TARIFF_EXPORT,
+    CONF_TARIFF_IMPORT,
     CONF_UA,
     CONF_WEATHER,
+    DEFAULT_OPTIMISER,
     DEFAULT_PRIORS,
     DOMAIN,
     SUGGESTED,
 )
+from .core.cost_model import parse_tariff
 from .core.telemetry import REQUIRED_ROLES, Role
 
 _SENSOR = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
@@ -133,6 +140,21 @@ OPTIONS_SCHEMA = vol.Schema(
                 min=0.5, max=30, step=0.1, unit_of_measurement="kWh/K", mode=selector.NumberSelectorMode.BOX
             )
         ),
+        vol.Required(CONF_ROOM_MIN): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=16, max=24, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX
+            )
+        ),
+        vol.Required(CONF_ROOM_MAX): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=17, max=26, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX
+            )
+        ),
+        vol.Required(CONF_COST_BASIS): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=["battery", "tariff"], translation_key="cost_basis")
+        ),
+        vol.Required(CONF_TARIFF_IMPORT): selector.TextSelector(),
+        vol.Required(CONF_TARIFF_EXPORT): selector.TextSelector(),
     }
 )
 
@@ -141,9 +163,20 @@ class DaikinMpcOptionsFlow(OptionsFlowWithReload):
     """Priors only apply until learned state exists (reset by removing the integration)."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        current = {CONF_LEARNING: True, **DEFAULT_PRIORS, **self.config_entry.options}
+            if float(user_input[CONF_ROOM_MIN]) >= float(user_input[CONF_ROOM_MAX]):
+                errors[CONF_ROOM_MAX] = "room_range"
+            for key in (CONF_TARIFF_IMPORT, CONF_TARIFF_EXPORT):
+                try:
+                    parse_tariff(str(user_input[key]))
+                except ValueError:
+                    errors[key] = "bad_tariff"
+            if not errors:
+                return self.async_create_entry(data=user_input)
+        current = {CONF_LEARNING: True, **DEFAULT_PRIORS, **DEFAULT_OPTIMISER, **self.config_entry.options}
         return self.async_show_form(
-            step_id="init", data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, current)
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, user_input or current),
+            errors=errors,
         )
