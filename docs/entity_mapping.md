@@ -53,7 +53,7 @@ Status legend: **V** verified from live state/attributes · **?** needs confirma
 | Preset (`select.bridge0_mode_preset_mode`) | Schedule; comfort 21.0, eco 19.0 | Room setpoint schedule |
 | Room temperature hysteresis (9-0C) | 1.0 K | |
 | Overshoot | 2 | |
-| Heating LWT range (9-01 / 9-00) | 25 … 47 °C | **25 °C floor clamps the requested LWT for To ≥ ~9 °C** |
+| Heating LWT range (9-01 / 9-00) | 25 … 47 °C | **25 °C is also the plant's minimum achievable LWT** (confirmed); clamps the requested LWT for To ≥ ~9 °C |
 | DHW reheat (6-0D), disinfection (2-00…2-04) | reheat 2; disinfection day 2, start 3, 55 °C, 45 min | M6, must be preserved |
 | DHW priority (C-00) | 1 | |
 | Quiet mode | Auto | |

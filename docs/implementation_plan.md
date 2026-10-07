@@ -32,6 +32,12 @@ M0 findings (see `docs/entity_mapping.md`, `docs/data_inventory.md`):
 - A second (Onecta cloud) control path exists; the MPC gateway must be the only automated writer.
 - Raw recorder retention is 60–120 days; last winter exists only as hourly LTS.
 
+Plant limit (confirmed by user): **25 °C is the minimum achievable leaving-water temperature** for this Daikin, independent of settings (also configured as field setting 9-01). Consequences used throughout the models and optimiser:
+
+- Requested LWT is clamped to ≥ 25 °C in every simulation; offsets or setpoints that would ask for less have no effect and must not be counted as savings.
+- At the 25 °C floor (MWT ≈ 24 °C) the radiators emit only ≈ 0.3 kW into a 20.5 °C room, while the heat pump cannot deliver less than ≈ 0.7 kW. Above ≈ 8–9 °C outdoor the building needs less than the minimum output, so heat can only be delivered in on/off blocks; above ≈ 12 °C even the radiators at minimum LWT exceed demand.
+- In that regime the controllable quantities are block timing and length (via the room setpoint), not water temperature; below ≈ 6 °C the LWT/low-and-slow objective applies.
+
 Decisions (7 October 2026):
 
 - **Primary space-heating actuator: the Daikin room setpoint** (`climate.bridge0_room_room_heating`, 0.5 K steps), letting native RT modulation and the WD curve do the LWT work. The LWT deviation stays at its native value and is only a possible secondary actuator after separate commissioning. All v1 rules for the deviation (bounds, step, write budget, readback, hold) apply equally to the setpoint; commissioning band ±0.5 K around the scheduled setpoint.
