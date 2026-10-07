@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 
 from .intervals import IntervalClass, IntervalSummary, classify
@@ -47,8 +47,9 @@ class HourRecord:
     cls: str
     counter_gap: bool = False  # counter increments across a midnight-spanning gap were dropped
     counter_stale: bool = False  # counters not readable (bridge heartbeat stale) during this hour
-    # every counter had a baseline at (or before) the start of this hour, i.e. its energy is complete
-    anchored: bool = True
+    # a counter started a new baseline after its date began (first reading, re-mapping, lost state): the
+    # date's energy before that point was not observed, so the date is incomplete
+    counter_restart: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -75,7 +76,7 @@ class HourRecord:
             cls=str(IntervalClass(d["cls"]).value),
             counter_gap=bool(d.get("counter_gap", False)),
             counter_stale=bool(d.get("counter_stale", False)),
-            anchored=bool(d.get("anchored", True)),
+            counter_restart=bool(d.get("counter_restart", False)),
         )
         if rec.cls != IntervalClass.INVALID.value and not {"ti", "to"} <= rec.means.keys():
             raise ValueError("usable hour without temperature means")
@@ -120,7 +121,7 @@ class _Acc:
     dhw: bool = False
     counter_gap: bool = False
     counter_stale: bool = False
-    anchored: bool | None = None  # set when the hour receives its first counter readings
+    counter_restart: bool = False
 
 
 def _num_out(v: float) -> float | None:
@@ -177,7 +178,7 @@ class HourAccumulator:
         # Counter increments cover the interval since each counter's previous reading; they are
         # computed before the hour rolls over so the part of the interval that lies in the closing
         # hour (e.g. 23:55-00:00) is booked there, not to the next hour (or date).
-        incs, gap_dropped, stale = self._counter_increments(s)
+        incs, gap_dropped, stale, restart = self._counter_increments(s)
         old = self._acc
         if old is not None and key != old.key:
             to_old, incs = _split(incs, s.time, add_hours(old.key, 1.0))
@@ -189,9 +190,7 @@ class HourAccumulator:
             local = key.astimezone(s.time.tzinfo) if s.time.tzinfo is not None else key
             self._acc = _Acc(start=local, key=key)
         a = self._acc
-        if a.anchored is None and incs:
-            # an interval starting after the hour began means energy before it was not observed
-            a.anchored = all(elapsed_s(since, a.key) >= 0 for _, since in incs.values())
+        a.counter_restart |= restart
         _add(a, {k: inc for k, (inc, _) in incs.items()})
         a.counter_stale |= stale
         a.counter_gap |= gap_dropped
@@ -220,12 +219,13 @@ class HourAccumulator:
 
     def _counter_increments(
         self, s: ValidatedSnapshot
-    ) -> tuple[dict[str, tuple[float, datetime]], bool, bool]:
+    ) -> tuple[dict[str, tuple[float, datetime]], bool, bool, bool]:
         """Per counter: (increment, start of the interval it covers); whether an increment across a
         midnight gap was dropped; whether any counter could not be read (stale bridge or a mapped
-        counter unavailable), so energy may still be outstanding."""
+        counter unavailable), so energy may still be outstanding; whether a counter started a new
+        baseline after local midnight (its date's energy before that is unknown)."""
         incs: dict[str, tuple[float, datetime]] = {}
-        dropped = False
+        dropped = restart = False
         # Counters only from a live bridge: with a stale heartbeat HA still holds the last values, and
         # refreshing the baselines from them would hide the outage from the gap handling below.
         live = Role.HEARTBEAT not in s.issues
@@ -242,6 +242,13 @@ class HourAccumulator:
             # one local day it is kept, so daily totals stay right; across midnight it is dropped and
             # the day is marked so it is not used for learning.
             same_day = seen is not None and _local_date(seen, s.time) == s.time.date()
+            if prev is None and (s.time.hour, s.time.minute, s.time.second, s.time.microsecond) != (
+                0,
+                0,
+                0,
+                0,
+            ):
+                restart = True  # first baseline (start-up, re-mapping, lost state) after midnight
             inc = 0.0
             if prev is not None and gap and not same_day:
                 dropped = True
@@ -255,7 +262,7 @@ class HourAccumulator:
             self._last_counter[k] = v
             self.counter_time[k] = s.time
             incs[k] = (inc, seen if seen is not None else s.time)
-        return incs, dropped, stale
+        return incs, dropped, stale, restart
 
     def to_dict(self) -> dict[str, Any]:
         """The in-progress hour, so a restart does not lose its samples and energy."""
@@ -276,20 +283,30 @@ class HourAccumulator:
                 "dhw": a.dhw,
                 "counter_gap": a.counter_gap,
                 "counter_stale": a.counter_stale,
-                "anchored": a.anchored,
+                "counter_restart": a.counter_restart,
             }
         return {"acc": acc, "last_time": self._last_time.isoformat() if self._last_time else None}
 
-    def load_dict(self, d: dict[str, Any]) -> None:
-        """Restore the in-progress hour (raises on invalid data; nothing is changed then)."""
+    def load_dict(self, d: dict[str, Any], tz: tzinfo | None = None) -> None:
+        """Restore the in-progress hour (raises on invalid data; nothing is changed then).
+
+        ``tz``: the installation's named zone; restored ISO timestamps only carry a fixed offset, which
+        would lose 23/25-hour day lengths.
+        """
         raw = d.get("acc")
         acc = None
         if raw is not None:
             start, key = datetime.fromisoformat(str(raw["start"])), datetime.fromisoformat(str(raw["key"]))
             if start.tzinfo is None or key.tzinfo is None:
                 raise ValueError("naive time")
+            if hour_key(start) != key or elapsed_s(key, start) != 0:
+                raise ValueError("hour start and key disagree")
+            if tz is not None:
+                start = start.astimezone(tz)
             sums = {str(k): _num_in(v) for k, v in dict(raw["sums"]).items()}
             weights = {str(k): _num_in(v, 0.0, 3600.0) for k, v in dict(raw["weights"]).items()}
+            if set(weights) != set(sums):
+                raise ValueError("means: sums and weights disagree")
             hz_min, hz_max = (
                 _num_in(raw.get("hz_min"), allow_nan=True),
                 _num_in(raw.get("hz_max"), allow_nan=True),
@@ -309,12 +326,14 @@ class HourAccumulator:
                 dhw=bool(raw["dhw"]),
                 counter_gap=bool(raw["counter_gap"]),
                 counter_stale=bool(raw["counter_stale"]),
-                anchored=None if raw.get("anchored") is None else bool(raw["anchored"]),
+                counter_restart=bool(raw.get("counter_restart", False)),
             )
         lt = d.get("last_time")
         last_time = datetime.fromisoformat(str(lt)) if lt else None
         if last_time is not None and last_time.tzinfo is None:
             raise ValueError("naive time")
+        if acc is not None and last_time is not None and not 0 <= elapsed_s(acc.key, last_time) < 3600:
+            raise ValueError("last sample outside the in-progress hour")
         self._acc, self._last_time = acc, last_time
 
     def _finish(self, a: _Acc) -> HourRecord:
@@ -352,7 +371,7 @@ class HourAccumulator:
             cls.value,
             a.counter_gap,
             a.counter_stale,
-            bool(a.anchored),
+            a.counter_restart,
         )
 
 
@@ -376,17 +395,20 @@ class DayAggregator:
             "first_partial": self._first_partial,
         }
 
-    def load_dict(self, d: dict[str, Any]) -> None:
+    def load_dict(self, d: dict[str, Any], tz: tzinfo | None = None) -> None:
         """Restore the current date's hours (raises on invalid data; nothing is changed then)."""
         day = d.get("day")
         hours = [HourRecord.from_dict(dict(x)) for x in d.get("hours") or []]
+        if tz is not None:
+            for h in hours:
+                h.start = h.start.astimezone(tz)
         if day is not None:
             date.fromisoformat(str(day))
             if any(h.start.date().isoformat() != day for h in hours):
                 raise ValueError("hour outside its date")
         self._day = None if day is None else str(day)
         self._hours = hours
-        self._tz = None  # restored offsets are fixed; the zone is taken from the next live hour
+        self._tz = tz  # restored offsets are fixed; the named zone comes from the caller or live hours
         # older state without the flag: assume the date may be incomplete
         self._first_partial = True if day is None else bool(d.get("first_partial", True))
 
@@ -405,16 +427,16 @@ class DayAggregator:
             self._first_partial = False
             self._hours = []
         if self._day is None:
-            # first hour without restored state: the date is complete only if it is the midnight hour
-            # and its counters were already anchored at its start
-            self._first_partial = (h.start.hour, h.start.minute) != (0, 0) or not h.anchored
+            # first hour without restored state: the date can only be complete if it is the midnight
+            # hour (counters starting later in it are caught by counter_restart)
+            self._first_partial = (h.start.hour, h.start.minute) != (0, 0)
         self._day = day
         self._hours.append(h)
         return out
 
     def _finish(self) -> DayRecord | None:
         hs = [h for h in self._hours if h.coverage >= 0.75 and h.cls != IntervalClass.INVALID.value]
-        if self._day is None or any(h.counter_gap for h in self._hours):
+        if self._day is None or any(h.counter_gap or h.counter_restart for h in self._hours):
             return None
         length_h = day_length_h(date.fromisoformat(self._day), self._tz)
         if len(hs) < self.MIN_HOURS + (length_h - 24):  # same allowance for missing hours on 23/25 h days

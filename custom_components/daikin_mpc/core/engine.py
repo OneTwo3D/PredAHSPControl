@@ -9,8 +9,9 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 
@@ -138,6 +139,7 @@ class ShadowEngine:
         self.last_hour: HourRecord | None = None
         self.last_day: DayRecord | None = None
         self.last_forecast: Forecast | None = None
+        self._tz: tzinfo | None = None
         self._last_forecast_hour: datetime | None = None
 
     # --- helpers ---------------------------------------------------------------------------
@@ -166,6 +168,8 @@ class ShadowEngine:
         e.g. Predheat's 1 h and 8 h room-temperature forecasts. Issued once per hour.
         """
         t = s.time
+        if t.tzinfo is not None:
+            self._tz = t.tzinfo
         ti, to = s.get(Role.TI), s.get(Role.TO)
         heating_enabled = s.get(Role.HEATING_ENABLED)
         hz = s.get(Role.HZ)
@@ -387,6 +391,7 @@ class ShadowEngine:
             "counter_time": {k: v.isoformat() for k, v in self.hours.counter_time.items()},
             # in-progress hour and date, so a restart neither loses energy nor learns from a partial day
             "hour_acc": self.hours.to_dict(),
+            "tz": getattr(self._tz, "key", None),  # named zone (e.g. Europe/London) for restored times
             "day_acc": self.days.to_dict(),
             "cop_learner": self.cop_learner.to_dict(),
         }
@@ -410,8 +415,14 @@ class ShadowEngine:
             ("setpoint profile", lambda: self._load_profile(d)),
             ("pending day", lambda: self._load_pending_day(d)),
             ("meter counters", lambda: self._load_counters(d)),
-            ("current hour", lambda: self.hours.load_dict(dict(d["hour_acc"])) if "hour_acc" in d else None),
-            ("current day", lambda: self.days.load_dict(dict(d["day_acc"])) if "day_acc" in d else None),
+            (
+                "current hour",
+                lambda: self.hours.load_dict(dict(d["hour_acc"]), _zone(d)) if "hour_acc" in d else None,
+            ),
+            (
+                "current day",
+                lambda: self.days.load_dict(dict(d["day_acc"]), _zone(d)) if "day_acc" in d else None,
+            ),
         ]
         for name, fn in sections:
             try:
@@ -490,6 +501,16 @@ class ShadowEngine:
         if not all(math.isfinite(v) for v in last.values()) or any(t.tzinfo is None for t in times.values()):
             raise ValueError("invalid counter baselines")
         self.hours._last_counter, self.hours.counter_time = last, times
+
+
+def _zone(d: dict[str, Any]) -> tzinfo | None:
+    key = d.get("tz")
+    if not key:
+        return None
+    try:
+        return ZoneInfo(str(key))
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
 
 
 def comfort_targets(

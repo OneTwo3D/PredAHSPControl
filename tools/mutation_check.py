@@ -37,7 +37,13 @@ M = [
         "self._first_partial = day is None",
         CORE,
     ),
-    ("A2 anchored ignored", C + "core/accumulator.py", "!= (0, 0) or not h.anchored", "!= (0, 0)", CORE),
+    (
+        "A2/R7-2 late counter start ignored",
+        C + "core/accumulator.py",
+        "any(h.counter_gap or h.counter_restart for h in self._hours)",
+        "any(h.counter_gap for h in self._hours)",
+        CORE,
+    ),
     (
         "A3/B5 day length forced 24",
         C + "core/accumulator.py",
@@ -45,13 +51,7 @@ M = [
         "length_h = 24.0",
         CORE,
     ),
-    (
-        "A3 tz from restored hour",
-        C + "core/accumulator.py",
-        "        # live hours carry the installation's named zone (needed for 23/25-hour day lengths)\n        self._tz = h.start.tzinfo\n",
-        "        self._tz = self._tz or h.start.tzinfo\n",
-        CORE,
-    ),
+    # "A3 tz from restored hour" retired: superseded by passing the named zone on restore (R7-3)
     ("A4 single fold", C + "core/cost_model.py", "for fold in (0, 1):", "for fold in (0,):", CORE),
     (
         "A4 wall-clock window",
@@ -151,6 +151,44 @@ M = [
         '    return {\n        "mapping"',
         '    return {}\n    return {\n        "mapping"',
         HA,
+    ),
+    (
+        "R7-1 sums/weights consistency off",
+        C + "core/accumulator.py",
+        "            if set(weights) != set(sums):",
+        "            if False:",
+        CORE,
+    ),
+    ("R7-3 zone not restored", C + "core/engine.py", "return ZoneInfo(str(key))", "return None", CORE),
+    (
+        "R7-4 offset changes ignored",
+        C + "core/cost_model.py",
+        "if off != prev and inside(",
+        "if False and inside(",
+        CORE,
+    ),
+    (
+        "R7-5 restart flag off",
+        C + "core/accumulator.py",
+        "                restart = True  # first baseline",
+        "                pass  # first baseline",
+        CORE,
+    ),
+    ("R7-B1 no capacity cap", C + "core/predictor.py", "min(plant.q_max_w, ", "max(0.0, ", CORE),
+    (
+        "R7-B2 small decrease accepted",
+        C + "core/accumulator.py",
+        "                    v = prev  # small decrease",
+        "                    pass  # small decrease",
+        CORE,
+    ),
+    ("R7-B3 no C learning", C + "core/learner.py", "dti_next / day_h])", "0.0])", CORE),
+    (
+        "R7-B4 expiry off by one",
+        C + "core/cost_model.py",
+        "t - series[i][0] < self.series_slot",
+        "t - series[i][0] <= self.series_slot",
+        CORE,
     ),
 ]
 only = sys.argv[1:]

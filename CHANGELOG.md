@@ -5,6 +5,25 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.6] - 2026-10-07
+
+Seventh review round (Codex): 5 code defects, 4 test gaps, see `docs/review_2026-10.md`.
+
+### Fixed
+- A day is not used for learning when any meter started counting after midnight (late first reading,
+  meter re-mapped, lost state): previously one counter starting at 00:30, or a re-mapped meter at
+  noon, still produced a "complete" day with missing energy.
+- A restart shortly after midnight on a clock-change day no longer reports that day as 24 hours: the
+  installation's time zone is saved and applied to restored times.
+- A saved in-progress hour with inconsistent averages is rejected instead of breaking every update.
+- Battery charging price: a cheap period cut short by the spring clock change (e.g. 01:30–02:30 keeps
+  02:00–02:30) is now found.
+
+### Tests
+- New tests: heat-pump output cap, small meter decreases treated as noise, thermal-capacity learning,
+  exact expiry of Predbat's last slot, plus regression tests for each fix. `tools/mutation_check.py`
+  now checks 29 mutations; all are caught.
+
 ## [0.4.5] - 2026-10-07
 
 Sixth review round (Codex): 5 code defects and 12 test-suite gaps, see `docs/review_2026-10.md`.

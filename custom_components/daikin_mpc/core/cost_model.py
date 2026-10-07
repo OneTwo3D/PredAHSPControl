@@ -178,6 +178,18 @@ class CostProvider:
             if inside(end):
                 instants.append(end)  # the fixed tariff takes over where the series ends
         tz = t.tzinfo
+        if tz is not None:
+            # just after each UTC-offset change (a spring change can cut a cheap period short without
+            # removing it, e.g. 01:30-02:30 keeps 02:00-02:30); changes fall on 15-minute UTC boundaries
+            u = start.astimezone(UTC)
+            u = u.replace(minute=u.minute - u.minute % 15, second=0, microsecond=0)
+            prev = u.astimezone(tz).utcoffset()
+            while elapsed_s(u, t) > 0:
+                u += timedelta(minutes=15)
+                off = u.astimezone(tz).utcoffset()
+                if off != prev and inside(u.astimezone(tz)):
+                    instants.append(u.astimezone(tz))
+                prev = off
         d = start.date() - timedelta(days=1)
         while d <= t.date():
             for p in self.tariff:
