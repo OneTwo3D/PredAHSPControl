@@ -5,6 +5,16 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.2.2] - 2026-10-07
+
+### Added
+- **Reconfigure** (Settings → Devices & services → Daikin MPC → ⋮ → Reconfigure): edit the entity mapping
+  in place without losing learned state. Unmapped optional roles are pre-filled with verified defaults.
+
+### Fixed
+- Predheat comparison entities are entered as text, because `predheat.*` states are not registered
+  entities and the entity picker could drop them.
+
 ## [0.2.1] - 2026-10-07
 
 ### Added

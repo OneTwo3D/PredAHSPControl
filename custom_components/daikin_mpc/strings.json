@@ -30,13 +30,44 @@
           "ext_kwh": "External heat pump meter energy (kWh, optional, recommended)",
           "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)"
         }
+      },
+      "reconfigure": {
+        "title": "Daikin MPC: entity mapping",
+        "description": "Change which entities are read. Learned state is kept. Empty optional fields are pre-filled with verified defaults where those entities exist.",
+        "data": {
+          "ti": "Room temperature (thermostat)",
+          "to": "Outdoor temperature",
+          "lwt": "Leaving water temperature",
+          "rwt": "Return water temperature",
+          "flow": "Water flow",
+          "heat_w": "Heat output (W)",
+          "elec_w": "Electrical input (W)",
+          "hz": "Compressor frequency",
+          "lwt_set": "Requested LWT",
+          "room_set": "Room heating setpoint",
+          "heat_kwh": "Heating heat counter (kWh)",
+          "elec_kwh": "Heating electricity counter (kWh)",
+          "dhw_heat_kwh": "DHW heat counter (kWh)",
+          "buh_kwh": "Backup heater electricity counter (kWh)",
+          "defrost": "Defrost active",
+          "dhw_active": "DHW active",
+          "heating_enabled": "Space heating switched on",
+          "weather": "Weather forecast entity",
+          "predheat_h1": "Predheat room forecast +1 h (optional, for comparison)",
+          "predheat_h8": "Predheat room forecast +8 h (optional)",
+          "heartbeat": "Bridge heartbeat (entity that changes every minute, e.g. Daikin clock)",
+          "ext_w": "External heat pump meter power (W, optional, recommended)",
+          "ext_kwh": "External heat pump meter energy (kWh, optional, recommended)",
+          "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)"
+        }
       }
     },
     "error": {
       "entity_not_found": "Entity not found"
     },
     "abort": {
-      "single_instance_allowed": "Already configured."
+      "single_instance_allowed": "Already configured.",
+      "reconfigure_successful": "Mapping updated."
     }
   },
   "options": {

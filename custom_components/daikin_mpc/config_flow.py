@@ -32,6 +32,9 @@ _BINARY = selector.EntitySelector(
 )
 _WEATHER = selector.EntitySelector(selector.EntitySelectorConfig(domain="weather"))
 _ANY = selector.EntitySelector(selector.EntitySelectorConfig())
+# Predheat publishes plain states (e.g. ``predheat.internal_temp_h1``) that are not registered entities;
+# the entity picker cannot always hold them, so these are entered as text.
+_TEXT = selector.TextSelector()
 
 _BINARY_KEYS = {Role.DEFROST.value, Role.DHW_ACTIVE.value, Role.HEATING_ENABLED.value}
 
@@ -46,26 +49,51 @@ def _schema() -> vol.Schema:
             _BINARY if key in _BINARY_KEYS else _ANY if key == Role.HEARTBEAT.value else _SENSOR
         )
     fields[vol.Optional(CONF_WEATHER)] = _WEATHER
-    fields[vol.Optional(CONF_PREDHEAT_H1)] = _ANY
-    fields[vol.Optional(CONF_PREDHEAT_H8)] = _ANY
+    fields[vol.Optional(CONF_PREDHEAT_H1)] = _TEXT
+    fields[vol.Optional(CONF_PREDHEAT_H8)] = _TEXT
     return vol.Schema(fields)
 
 
 class DaikinMpcConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    def _validate(self, user_input: dict[str, Any]) -> dict[str, str]:
+        errors: dict[str, str] = {}
+        for key, entity_id in user_input.items():
+            if entity_id and self.hass.states.get(entity_id) is None:
+                errors[key] = "entity_not_found"
+        return errors
+
+    def _suggested(self, current: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Current values first; verified defaults for anything not yet mapped."""
+        defaults = {k: v for k, v in SUGGESTED.items() if self.hass.states.get(v) is not None}
+        return {**defaults, **{k: v for k, v in (current or {}).items() if v}}
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            for key, entity_id in user_input.items():
-                if entity_id and self.hass.states.get(entity_id) is None:
-                    errors[key] = "entity_not_found"
+            errors = self._validate(user_input)
             if not errors:
                 return self.async_create_entry(title="Daikin MPC", data=user_input)
-        suggested = {k: v for k, v in SUGGESTED.items() if self.hass.states.get(v) is not None}
         return self.async_show_form(
             step_id="user",
-            data_schema=self.add_suggested_values_to_schema(_schema(), user_input or suggested),
+            data_schema=self.add_suggested_values_to_schema(_schema(), user_input or self._suggested()),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Edit the entity mapping in place; learned state is kept."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = self._validate(user_input)
+            if not errors:
+                return self.async_update_reload_and_abort(entry, data=user_input)
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                _schema(), user_input or self._suggested(dict(entry.data))
+            ),
             errors=errors,
         )
 

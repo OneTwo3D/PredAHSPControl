@@ -150,3 +150,22 @@ async def test_options_flow(hass: HomeAssistant, weather_calls) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     assert entry.runtime_data.engine.cfg.learning_enabled is False
+
+
+async def test_reconfigure_adds_missing_roles_and_keeps_entry(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    minimal = {
+        k: v for k, v in SUGGESTED.items() if v in STATES and k not in ("ext_w", "ext_kwh", "dhw_elec_kwh")
+    }
+    entry = MockConfigEntry(domain=DOMAIN, data=minimal)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    data = {k: v for k, v in SUGGESTED.items() if v in STATES}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], data)
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    assert entry.data["ext_w"] == "sensor.kwh_meter_power"
+    assert entry.data["predheat_h1"] == "predheat.internal_temp_h1"
