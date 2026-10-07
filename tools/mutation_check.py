@@ -221,6 +221,62 @@ M = [
         CORE,
     ),
     ("R8-B2 standby over 24 h", C + "core/cop_learner.py", "sb * day_h / 1000.0", "sb * 24.0 / 1000.0", CORE),
+    (
+        "R9-1 live dicts in saved state",
+        C + "core/accumulator.py",
+        '"sums": dict(a.sums),',
+        '"sums": a.sums,',
+        CORE,
+    ),
+    (
+        "R9-1 live deltas in saved state",
+        C + "core/accumulator.py",
+        '"deltas": dict(a.deltas),',
+        '"deltas": a.deltas,',
+        CORE,
+    ),
+    (
+        "R9-2 reset not a discontinuity",
+        C + "core/accumulator.py",
+        "                    new_baseline = True",
+        "                    pass",
+        CORE,
+    ),
+    (
+        "R9-3 clock going back accepted",
+        C + "core/accumulator.py",
+        "if self._last_time is not None and elapsed_s(self._last_time, s.time) <= 0:",
+        "if False:",
+        CORE,
+    ),
+    (
+        "R9-B1 learning switch ignored",
+        C + "core/engine.py",
+        "        if not self.cfg.learning_enabled:\n",
+        "        if False:\n",
+        CORE,
+    ),
+    (
+        "R9-B2 RT modulation unbounded above",
+        C + "core/predictor.py",
+        "min(plant.rt_modulation_max_k, mod)",
+        "mod",
+        CORE,
+    ),
+    (
+        "R9-B3 hysteresis off at strict >",
+        C + "core/predictor.py",
+        "ti >= sp + plant.hysteresis_off_k",
+        "ti > sp + plant.hysteresis_off_k",
+        CORE,
+    ),
+    (
+        "R9-B4 standby from one off hour",
+        C + "core/accumulator.py",
+        "if len(off) >= 3:",
+        "if len(off) >= 1:",
+        CORE,
+    ),
 ]
 only = sys.argv[1:]
 res = []

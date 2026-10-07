@@ -106,9 +106,9 @@ class CopLearner:
     def to_dict(self) -> dict[str, Any]:
         return {
             "version": STATE_VERSION,
-            "heat": self.heat,
-            "elec": self.elec,
-            "to_w": self.to_w,
+            "heat": list(self.heat),  # copies: serialised later while learning may continue
+            "elec": list(self.elec),
+            "to_w": list(self.to_w),
             "standby_w": self.standby_w,
             "days": self.days,
             "edges": list(self.edges_c),

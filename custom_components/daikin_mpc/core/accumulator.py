@@ -174,6 +174,12 @@ class HourAccumulator:
 
     def add(self, s: ValidatedSnapshot) -> list[HourRecord]:
         done: list[HourRecord] = []
+        if self._last_time is not None and elapsed_s(self._last_time, s.time) <= 0:
+            # the clock went back (or a duplicate sample): the timeline is unreliable, so the current
+            # date's energy balance is not used; samples are ignored until time passes the last one
+            if self._acc is not None:
+                self._acc.counter_restart = True
+            return done
         key = hour_key(s.time)
         # Counter increments cover the interval since each counter's previous reading; they are
         # computed before the hour rolls over so the part of the interval that lies in the closing
@@ -258,7 +264,10 @@ class HourAccumulator:
                 if v >= prev:
                     inc = v - prev
                 elif v < prev - RESET_THRESHOLD_KWH:
-                    inc = v  # meter reset: energy counted since the reset
+                    # meter reset: the energy between the last reading and the reset is unknown, so it is
+                    # a discontinuity like a new baseline (the date is not used for learning)
+                    inc = v
+                    new_baseline = True
                 else:
                     v = prev  # small decrease: noise, keep the higher value
             self._last_counter[k] = v
@@ -275,12 +284,13 @@ class HourAccumulator:
                 "start": a.start.isoformat(),
                 "key": a.key.isoformat(),
                 "covered_s": a.covered_s,
-                "sums": a.sums,
-                "weights": a.weights,
+                # copies: HA serialises saved state later, in a worker thread, while polling continues
+                "sums": dict(a.sums),
+                "weights": dict(a.weights),
                 "hz_min": _num_out(a.hz_min),
                 "hz_max": _num_out(a.hz_max),
                 "flow_min": _num_out(a.flow_min),
-                "deltas": a.deltas,
+                "deltas": dict(a.deltas),
                 "defrost": a.defrost,
                 "dhw": a.dhw,
                 "counter_gap": a.counter_gap,

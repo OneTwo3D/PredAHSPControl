@@ -5,6 +5,26 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.8] - 2026-10-07
+
+Ninth review round (Codex) — attacks on the two accounting rules of 0.4.7: 3 defects, 4 test gaps; no
+wrongly rejected day found in normal operation (incl. both clock-change days). See
+`docs/review_2026-10.md`.
+
+### Fixed
+- **Saved state is a detached snapshot:** HA writes it later in a worker thread while polling continues;
+  the in-progress hour's totals were live references, so a poll in between could be counted twice after
+  a restart.
+- **A meter reset is a discontinuity:** the energy between the last reading and the reset is unknown, so
+  that date is no longer used for learning (it was counted as complete with energy missing).
+- **Clock going backwards:** samples are ignored until time passes the last one, and the current date is
+  not used for learning (repeated hours had inflated a 24-hour energy balance).
+
+### Tests
+- New tests: learning switched off changes nothing, RT-modulation bounds, exact thermostat thresholds,
+  standby needs three off hours, plus regression tests for each fix. `tools/mutation_check.py`:
+  40 mutations, all caught.
+
 ## [0.4.7] - 2026-10-07
 
 Eighth review round (Codex): 4 code defects, 2 test gaps, and the finding that the restart/day
