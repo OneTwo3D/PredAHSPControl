@@ -25,7 +25,14 @@ Scope: self-learning supervisory controller for space heating, followed by a sep
 - Predbat: **HA add-on**. Predheat: **running** and feeding Predbat (settings likely need tuning).
 - Season: just leaving summer. Raw recorder history (default 10 days) contains no heating data; last winter exists only as hourly long-term statistics (LTS), and only for entities with a `state_class`.
 
-Still to verify in M0: thermostat type (Daikin Madoka/Human Comfort Interface via P1P2 vs external on/off contact), whether its setpoint is visible/writable, exact P1P2 entity names and writability, write-budget entities, energy-meter type, DHW arrangement.
+M0 findings (see `docs/entity_mapping.md`, `docs/data_inventory.md`):
+
+- Native control mode is **RT** (Daikin room-thermostat control) with LWT modulation up to ±5 K, using the Daikin room sensor in the living room. Writable candidates: LWT deviation (`climate.bridge0_lwt_abs_heating`, ±10, step 1) and room setpoint (`climate.bridge0_room_room_heating`, 16–26, step 0.5). Which one is the primary actuator is an open decision (the 25 °C LWT floor removes downward deviation authority above ~9 °C outdoor).
+- UA ≈ 94 W/K, net gains ≈ 440 W, C ≈ 3 kWh/K (weak); radiators ≈ 10 kW @ΔT50 (strongly oversized); heat-pump minimum output ≈ 0.7–0.9 kW, so cycling dominates above ~8 °C outdoor. The optimiser objective must treat cycle count/length and run timing as first-class, not only LWT.
+- A second (Onecta cloud) control path exists; the MPC gateway must be the only automated writer.
+- Raw recorder retention is 60–120 days; last winter exists only as hourly LTS.
+
+Still to verify: thermostat type (Daikin Madoka/Human Comfort Interface via P1P2 vs external on/off contact), whether its setpoint is visible/writable, exact P1P2 entity names and writability, write-budget entities, energy-meter type, DHW arrangement.
 
 ## 2. Objective and non-goals
 
