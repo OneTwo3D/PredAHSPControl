@@ -1,9 +1,9 @@
 # Changelog
 
-Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z` (created automatically by
-`.github/workflows/ci.yml` after tests pass). Bump `custom_components/daikin_mpc/manifest.json`
-`version` and add a section here for every release. An optional `<!-- ref: <commit> -->` line pins
-the release to an earlier commit (used to back-fill old versions).
+Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, created automatically by
+`.github/workflows/ci.yml` after tests pass on the default branch. Bump
+`custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
+0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
 ## [0.2.1] - 2026-10-07
 
@@ -23,7 +23,6 @@ the release to an earlier commit (used to back-fill old versions).
 Remove and re-add the integration so the new optional entities appear in the setup form.
 
 ## [0.2.0] - 2026-10-07
-<!-- ref: 8e1656bf9a0effa5113982cc7b82bc524469625f -->
 
 ### Added
 - First Home Assistant release (shadow mode, observation only, no writes to the heat pump).

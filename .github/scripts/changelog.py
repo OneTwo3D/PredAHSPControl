@@ -1,4 +1,4 @@
-"""Tiny CHANGELOG.md reader for the release job: versions | notes <v> | ref <v>."""
+"""Tiny CHANGELOG.md reader for the release job: versions | notes <v>."""
 
 import re
 import sys
