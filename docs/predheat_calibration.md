@@ -12,7 +12,9 @@
 > forecast it is **not** recommended. The remaining room-temperature error is structural: Predheat does
 > not model the Daikin's RT modulation or the overnight deviation schedule.
 >
-> `hysteresis`/`hysteresis_off` stay at 1.0. The `heating_energy`/`volume_temp` entity fixes below still apply.
+> `hysteresis`/`hysteresis_off` stay at 1.0. The `heating_energy` fix below still applies.
+>
+> **`volume_temp` note (verified in source):** Predheat reads `volume_temp` with `get_arg("volume_temp", …)` *without* `domain="predheat"`, so a `volume_temp:` inside the `predheat:` block is ignored. It falls back to its own simulated value (`input_number.predbat_next_volume_temp`), which is adequate. No Zigbee flow sensor is needed for Predheat; the line can stay or be removed.
 
 ## First pass (superseded where noted)
 
