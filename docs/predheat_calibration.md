@@ -68,7 +68,7 @@ Suggested `heat_pump_efficiency` (outdoor °C → COP, normalised by its maximum
 | `internal_temperature` | `sensor.bridge0_sensors_temperature_room` | valid | keep |
 | `target_temperature` | `sensor.bridge0_room_room_heating_setpoint` | valid | keep |
 | `heating_energy` | `sensor.ashp_daily_electricity` | valid, but **includes DHW** (today 0.94 kWh = 0.12 heating + 0.82 DHW) | `sensor.ashp_heating_power_consumption_daily` (heating only, same sensor already used as `car_charging_energy` filter) |
-| `heating_active` | `binary_sensor.bridge0_unknown_climate_active_q4` | **verified 7 Oct: = space heating enabled, not demand** | `binary_sensor.bridge0_mode_valve_zone_main` (thermostat demand, verified) |
+| `heating_active` | `binary_sensor.bridge0_unknown_climate_active_q4` (as a list) | **verified 7 Oct: = space heating enabled, not demand; and a list is never converted to on/off, so it always reads as active** | `heating_active: binary_sensor.bridge0_mode_valve_zone_main` — single value, no `-` |
 | `volume_temp` | `sensor.ashp_flow_temperature_living_room_temperature` | **unavailable since 26 Sep** (Zigbee sensor offline/battery); also ignored inside `predheat:` | fix the sensor and move the key to the top level of `pred_bat:` (see note above) |
 
 ## Predbat interaction
@@ -79,3 +79,15 @@ Suggested `heat_pump_efficiency` (outdoor °C → COP, normalised by its maximum
 ## Next step (M1)
 
 Replay Predheat's simulation with current vs suggested values against this winter's measurements once live data exists (or on last winter's hourly LTS), and report daily-energy and room-temperature error before/after.
+
+## List vs single value (verified in Predbat/Predheat source)
+
+| Setting | Read as | List allowed? |
+|---|---|---|
+| `external_temperature`, `internal_temperature`, `target_temperature`, `heating_energy` | entity history (`minute_data_entity`) | yes (single or list) |
+| `days_previous`, `days_previous_weight` | list | yes (list expected) |
+| `heating_active` | boolean (`get_arg(..., False)`) | **no** — list is always truthy |
+| `flow_temp` | float (sensor or number) | no (single value); ignored while `weather_compensation` is set |
+| `volume_temp` | float, **top level** of `pred_bat:` only | no |
+| `weather` | entity id | no |
+| numeric settings (`heat_loss_watts`, …) | float/int | no |
