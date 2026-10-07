@@ -5,6 +5,12 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.2.6] - 2026-10-07
+
+### Changed
+- Plain-language names and help texts for every field in the setup and Reconfigure forms
+  (e.g. *Room thermostat asking for heat* instead of *Thermostat heating demand*). No functional change.
+
 ## [0.2.5] - 2026-10-07
 
 ### Added
