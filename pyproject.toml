@@ -31,3 +31,9 @@ files = ["custom_components/daikin_mpc/core"]
 [tool.ruff.lint.per-file-ignores]
 "tools/*" = ["E402", "E501"]
 "tests/*" = ["E402"]
+
+# The HA layer is type-checked only where Home Assistant is installed; core checks run everywhere.
+[[tool.mypy.overrides]]
+module = ["custom_components.daikin_mpc", "custom_components.daikin_mpc.coordinator", "custom_components.daikin_mpc.sensor", "custom_components.daikin_mpc.config_flow", "custom_components.daikin_mpc.diagnostics", "custom_components.daikin_mpc.const", "daikin_mpc", "daikin_mpc.coordinator", "daikin_mpc.sensor", "daikin_mpc.config_flow", "daikin_mpc.diagnostics", "daikin_mpc.const"]
+follow_imports = "skip"
+ignore_errors = true

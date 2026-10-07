@@ -38,4 +38,10 @@ def ols(x: FloatArray, y: FloatArray) -> OlsResult:
     cov = s2 * np.linalg.pinv(x.T @ x)
     ss_tot = float(((y - y.mean()) ** 2).sum())
     r2 = 1.0 - float(resid @ resid) / ss_tot if ss_tot > 0 else float("nan")
-    return OlsResult(coef=coef, stderr=np.sqrt(np.clip(np.diag(cov), 0, None)), r2=r2, rmse=s2**0.5, n=n)
+    return OlsResult(
+        coef=np.asarray(coef, dtype=np.float64),
+        stderr=np.sqrt(np.clip(np.diag(cov), 0, None)),
+        r2=r2,
+        rmse=s2**0.5,
+        n=n,
+    )

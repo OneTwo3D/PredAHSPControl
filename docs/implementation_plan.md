@@ -263,7 +263,9 @@ Delivered: `custom_components/daikin_mpc/core/{thermal_model,emitter_model,heatp
 Deliver `docs/offline_fit_report.md` and `docs/predheat_calibration.md`.
 Acceptance: synthetic-data convergence tests; held-out backtest error reported; Predheat suggestions with before/after error.
 
-### M2 — Telemetry integration + live learning (shadow, no optimiser)
+### M2 — Telemetry integration + live learning (shadow, no optimiser) ✅ (7 Oct 2026)
+Delivered: HA integration `custom_components/daikin_mpc` v0.2 (config/options flow, 5-min coordinator, bridge-heartbeat liveness, hour/day aggregation, bounded daily RLS learner seeded from M1, 24 h room/energy forecast with thermostat gating, RT modulation and 25 °C LWT floor, self-scoring incl. Predheat comparison, persistence, diagnostics), core and HA tests, CI. Install: `docs/installation.md`.
+
 Config flow, coordinator (5-min cycle), freshness/units validation, interval classification, persistence, RLS learners seeded from M1 priors, prediction sensors, diagnostics.
 Acceptance: installs/unloads cleanly; predictions and errors visible; invalid data rejected.
 

@@ -1,0 +1,14 @@
+{
+  "domain": "daikin_mpc",
+  "name": "Daikin MPC",
+  "after_dependencies": ["weather"],
+  "codeowners": ["@OneTwo3D"],
+  "config_flow": true,
+  "documentation": "https://github.com/OneTwo3D/PredAHSPControl",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/OneTwo3D/PredAHSPControl/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.2.0"
+}

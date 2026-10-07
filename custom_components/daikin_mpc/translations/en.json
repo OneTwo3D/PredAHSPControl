@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Daikin MPC (shadow mode)",
+        "description": "Map the telemetry entities. Suggested values are pre-filled where they exist. This version only reads and learns; it never writes to the heat pump.",
+        "data": {
+          "ti": "Room temperature (thermostat)",
+          "to": "Outdoor temperature",
+          "lwt": "Leaving water temperature",
+          "rwt": "Return water temperature",
+          "flow": "Water flow",
+          "heat_w": "Heat output (W)",
+          "elec_w": "Electrical input (W)",
+          "hz": "Compressor frequency",
+          "lwt_set": "Requested LWT",
+          "room_set": "Room heating setpoint",
+          "heat_kwh": "Heating heat counter (kWh)",
+          "elec_kwh": "Heating electricity counter (kWh)",
+          "dhw_heat_kwh": "DHW heat counter (kWh)",
+          "buh_kwh": "Backup heater electricity counter (kWh)",
+          "defrost": "Defrost active",
+          "dhw_active": "DHW active",
+          "heating_enabled": "Space heating switched on",
+          "weather": "Weather forecast entity",
+          "predheat_h1": "Predheat room forecast +1 h (optional, for comparison)",
+          "predheat_h8": "Predheat room forecast +8 h (optional)",
+          "heartbeat": "Bridge heartbeat (entity that changes every minute, e.g. Daikin clock)"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Entity not found"
+    },
+    "abort": {
+      "single_instance_allowed": "Already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Model priors",
+        "description": "Starting values used until learned state exists.",
+        "data": {
+          "learning_enabled": "Learning enabled",
+          "prior_ua_w_per_k": "Heat loss coefficient prior (W/K)",
+          "prior_gains_w": "Internal gains prior (W)",
+          "prior_c_kwh_per_k": "Thermal capacity prior (kWh/K)"
+        }
+      }
+    }
+  }
+}

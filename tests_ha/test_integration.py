@@ -1,0 +1,146 @@
+"""Integration tests against an in-memory Home Assistant (no live installation)."""
+
+from datetime import timedelta
+from unittest.mock import patch
+
+import pytest
+from homeassistant import config_entries
+from homeassistant.const import EVENT_CALL_SERVICE
+from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+
+from custom_components.daikin_mpc.const import CONF_WEATHER, DOMAIN, SUGGESTED
+
+STATES = {
+    "sensor.bridge0_sensors_temperature_room": "20.4",
+    "sensor.bridge0_sensors_temperature_outside": "5.0",
+    "sensor.bridge0_sensors_temperature_r1t_hp2gas_water": "30.0",
+    "sensor.bridge0_sensors_temperature_r4t_return_water": "28.0",
+    "sensor.bridge0_sensors_flow": "7.0",
+    "sensor.bridge0_power_production_heatpump": "900",
+    "sensor.bridge0_power_consumption_heatpump": "300",
+    "sensor.bridge0_mode_compressor_rpm": "30",
+    "sensor.bridge0_lwt_lwt_setpoint": "29",
+    "sensor.bridge0_room_room_heating_setpoint": "21.0",
+    "sensor.bridge0_meters_energy_produced_compressor_heating": "10730",
+    "sensor.bridge0_meters_electricity_consumed_compressor_heating": "3031",
+    "sensor.bridge0_meters_energy_produced_compressor_dhw": "3043",
+    "sensor.bridge0_meters_electricity_consumed_backup_heating": "0",
+    "binary_sensor.bridge0_mode_defrost_active": "off",
+    "binary_sensor.bridge0_dhw_dhw": "off",
+    "switch.bridge0_mode_altherma_on": "on",
+    "sensor.bridge0_mode_date_time_daikin": "We 2026-10-07 09:46",
+    "weather.forecast_home": "cloudy",
+    "predheat.internal_temp_h1": "20.3",
+    "predheat.internal_temp_h8": "20.0",
+}
+
+
+def _set_states(hass: HomeAssistant) -> None:
+    for e, v in STATES.items():
+        hass.states.async_set(e, v)
+
+
+@pytest.fixture
+def weather_calls(hass: HomeAssistant):
+    calls = []
+
+    async def handler(call) -> ServiceResponse:
+        calls.append(call)
+        now = dt_util.utcnow()
+        return {
+            "weather.forecast_home": {
+                "forecast": [
+                    {"datetime": (now + timedelta(hours=h)).isoformat(), "temperature": 5.0 - 0.1 * h}
+                    for h in range(1, 49)
+                ]
+            }
+        }
+
+    hass.services.async_register("weather", "get_forecasts", handler, supports_response=SupportsResponse.ONLY)
+    return calls
+
+
+async def test_config_flow_prefills_and_creates_entry(hass: HomeAssistant) -> None:
+    _set_states(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    assert result["type"] is FlowResultType.FORM
+    with patch("custom_components.daikin_mpc.async_setup_entry", return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {k: v for k, v in SUGGESTED.items() if v in STATES}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_WEATHER] == "weather.forecast_home"
+
+
+async def test_config_flow_rejects_missing_entity(hass: HomeAssistant) -> None:
+    _set_states(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    data = {k: v for k, v in SUGGESTED.items() if v in STATES}
+    data["ti"] = "sensor.does_not_exist"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], data)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"ti": "entity_not_found"}
+
+
+async def test_setup_creates_sensors_and_only_reads(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
+    entry.add_to_hass(hass)
+
+    calls = []
+    hass.bus.async_listen(
+        EVENT_CALL_SERVICE, lambda ev: calls.append((ev.data["domain"], ev.data["service"]))
+    )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+    await hass.async_block_till_done()
+
+    # Only the read-only weather forecast action may be called.
+    assert set(calls) <= {("weather", "get_forecasts")}
+    assert weather_calls
+
+    status = hass.states.get("sensor.daikin_mpc_status")
+    assert status is not None and status.state == "ok"
+    t1 = hass.states.get("sensor.daikin_mpc_predicted_room_temperature_1h")
+    assert t1 is not None and 15 < float(t1.state) < 25
+    ua = hass.states.get("sensor.daikin_mpc_heat_loss_coefficient")
+    assert ua is not None and float(ua.state) == pytest.approx(94.0)
+    e = hass.states.get("sensor.daikin_mpc_predicted_heating_electricity_24h")
+    assert e is not None and float(e.state) >= 0 and e.attributes["source"] == "weather"
+    assert len(e.attributes["hourly"]) == 24
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_unavailable_sensor_reports_incomplete(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    hass.states.async_set("sensor.bridge0_sensors_temperature_r1t_hp2gas_water", "-127.996")
+    entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    st = hass.states.get("sensor.daikin_mpc_status")
+    assert st.state == "telemetry_incomplete"
+    assert "lwt" in st.attributes["issues"]
+
+
+async def test_options_flow(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"learning_enabled": False, "prior_ua_w_per_k": 100, "prior_gains_w": 400, "prior_c_kwh_per_k": 3.5},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.runtime_data.engine.cfg.learning_enabled is False
