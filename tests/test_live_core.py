@@ -70,7 +70,8 @@ def test_hour_record_means_counters_and_reset():
     h = out[0]
     assert h.coverage == pytest.approx(55 / 60)
     assert 20.0 < h.means["ti"] < 21.0
-    assert h.deltas_kwh["heat_kwh"] == pytest.approx(0.1 * 5 + 0.05 + 0.1 * 5, abs=1e-9)
+    # incl. the 00:55-01:00 increment read at 01:00, which belongs to this hour
+    assert h.deltas_kwh["heat_kwh"] == pytest.approx(0.1 * 5 + 0.05 + 0.1 * 6, abs=1e-9)
     assert h.cls == "heating_full"
 
 

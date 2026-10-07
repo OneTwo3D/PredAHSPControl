@@ -5,6 +5,24 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.3] - 2026-10-07
+
+Fourth review round (Codex, 4 findings on 0.4.2), see `docs/review_2026-10.md`.
+
+### Fixed
+- **Energy just before midnight was booked to the next day:** each meter increment is now split across
+  hours by the time it covers (e.g. 23:55–00:00 stays on the old day), so daily energy matches the
+  daily temperatures used for learning.
+- A day is also withheld from learning when a mapped meter (not only the bridge) is unavailable at
+  midnight.
+- Battery charging price: the cheapest rate in the 24 h before each time, using the rate that actually
+  applies then (Predbat where it covers that time, the configured tariff otherwise), so an expired
+  Predbat series no longer sets prices.
+
+### Tools
+- Offline days must have all calendar hours (day length from local midnights); temperature changes are
+  only taken between two complete consecutive days.
+
 ## [0.4.2] - 2026-10-07
 
 Third review round (Codex, 5 findings on 0.4.1), see `docs/review_2026-10.md`.

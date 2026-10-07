@@ -98,7 +98,8 @@ def test_short_restart_keeps_counter_increments():
     acc2._last_counter, acc2.counter_time = dict(acc._last_counter), dict(acc.counter_time)
     acc2.add(snap(t + timedelta(minutes=8), heat_kwh=100.6))
     out = acc2.add(snap(t + timedelta(hours=1, minutes=1), heat_kwh=100.7))
-    assert out[0].deltas_kwh["heat_kwh"] == pytest.approx(0.1)
+    # 0.1 kWh at 10:08 (restart within 20 min) + the 10:08-11:01 increment's share before 11:00 (52/53)
+    assert out[0].deltas_kwh["heat_kwh"] == pytest.approx(0.1 + 0.1 * 52 / 53)
 
 
 # --- telemetry --------------------------------------------------------------------------
@@ -442,3 +443,64 @@ def test_offline_daily_totals_need_anchored_boundaries():
     assert totals(idx != idx[30])[1] == 24.0  # same-day gap recovered
     assert np.isnan(totals(idx >= idx[36])[1])  # series starts mid-day
     assert np.isnan(totals(idx < idx[60])[2])  # series ends mid-day
+
+
+# --- round 4 ----------------------------------------------------------------------------
+def test_increment_before_midnight_stays_on_its_day():
+    acc = HourAccumulator()
+    t = datetime(2026, 11, 2, 23, 0, tzinfo=UTC)
+    out = []
+    for i in range(25):
+        out += acc.add(snap(t + timedelta(minutes=5 * i), heat_kwh=100.0 if i < 12 else 101.0))
+    assert out[0].deltas_kwh["heat_kwh"] == pytest.approx(1.0)  # 23:55-00:00 belongs to 2 Nov
+    assert out[1].deltas_kwh["heat_kwh"] == pytest.approx(0.0)
+
+
+def test_unavailable_counter_at_midnight_withholds_the_day():
+    acc, days = HourAccumulator(), DayAggregator()
+    t = datetime(2026, 11, 1, 0, 0, tzinfo=UTC)
+    recs = []
+    heat = 100.0
+    for i in range(12 * 50):
+        ti = t + timedelta(minutes=5 * i)
+        heat += 1 / 12
+        missing = datetime(2026, 11, 1, 23, 55, tzinfo=UTC) <= ti < datetime(2026, 11, 2, 2, 0, tzinfo=UTC)
+        s = snap(ti, heat_kwh=heat)
+        if missing:
+            readings = {r: Reading(v) for r, v in s.values.items()}
+            readings[Role.HEAT_KWH] = Reading(None)
+            s = validate(Snapshot(ti, readings))
+        for h in acc.add(s):
+            r = days.add(h)
+            if r:
+                recs.append(r.day)
+    assert "2026-11-01" not in recs
+
+
+def test_expired_predbat_series_does_not_set_the_storage_cost():
+    from custom_components.daikin_mpc.core.cost_model import CostProvider, parse_tariff
+
+    t0 = datetime(2026, 1, 14, 0, 0, tzinfo=UTC)
+    series = [(t0 + timedelta(hours=h), 15.0) for h in range(24)]  # ended 15 Jan 00:00
+    cost = CostProvider(
+        parse_tariff("00:00-05:00=7.6, 05:00-24:00=35"),
+        parse_tariff("00:00-24:00=12"),
+        "battery",
+        0.9,
+        series,
+    )
+    noon = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
+    assert cost.tariff_rate(noon) == 35.0
+    assert cost.marginal_rate(noon) == pytest.approx(12.0)  # max(7.6 / 0.9, 12)
+
+
+def test_truncated_last_day_rejected_offline():
+    import dataset as ds
+    import pandas as pd
+
+    idx = pd.date_range("2026-01-10 00:00", "2026-01-11 22:00", freq="h", tz=ds.TZ)
+    base = {"ti_mean": 20.0, "to_mean": 5.0, "room_set_mean": 21.0, "lwt_set_mean": 30.0, "cls": "off"}
+    h = pd.DataFrame({"heat_kwh_sum": np.arange(len(idx), dtype=float), **base}, index=idx)
+    ds._increments(h, "heat_kwh_sum", "heat_kwh")
+    d = ds.daily(h)
+    assert np.isnan(d["heat_kwh"].iloc[1]) and d["day_h"].iloc[1] == 24 and np.isnan(d["dti_next"].iloc[0])

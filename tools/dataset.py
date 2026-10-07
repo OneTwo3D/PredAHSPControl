@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,7 @@ from custom_components.daikin_mpc.core.intervals import (
     IntervalSummary,
     classify,
 )
+from custom_components.daikin_mpc.core.timeutil import day_length_h
 
 TZ = "Europe/London"
 COUNTERS = ("heat_kwh", "elec_kwh", "dhw_heat_kwh", "dhw_elec_kwh", "buh_kwh")
@@ -95,9 +97,13 @@ def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
             "room_set": g["room_set_mean"].mean(),
             "lwt_set": g["lwt_set_mean"].mean(),
             "hours": g["ti_mean"].count(),
-            "day_h": g.size().astype(float),  # 23/25 on daylight-saving change days
+            "rows": g.size().astype(float),
         }
     )
+    # calendar day length from local midnights (23/25 on daylight-saving change days), not from the rows
+    # present, so a day truncated at the end of the data is recognised as incomplete
+    d["day_h"] = [day_length_h(t.date(), ZoneInfo(TZ)) for t in d.index]
+    complete = d["rows"] == d["day_h"]
     for c in (*COUNTERS, *HOUR_METERS):
         if f"dd_{c}" in h:
             # complete accounting: every increment of the day included (same-day gaps are booked to the
@@ -108,8 +114,10 @@ def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
             # start or end of the day (e.g. before the counter series begins) is missing
             start_ok = g[f"dd_{c}"].apply(lambda x: bool(len(x)) and pd.notna(x.iloc[0]))
             end_ok = g[f"cv_{c}"].apply(lambda x: bool(len(x)) and bool(x.iloc[-1]))
-            d[c] = total.where(~g[f"gapx_{c}"].any() & start_ok & end_ok)
-    d["dti_next"] = d["ti"].shift(-1) - d["ti"]
+            d[c] = total.where(~g[f"gapx_{c}"].any() & start_ok & end_ok & complete)
+    # ΔTi only between two complete, consecutive calendar days
+    nxt_ok = complete & complete.shift(-1, fill_value=False)
+    d["dti_next"] = (d["ti"].shift(-1) - d["ti"]).where(nxt_ok)
     d["dhw_hours"] = g["cls"].apply(lambda s: int((s == IntervalClass.DHW.value).sum()))
     return d
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from .intervals import IntervalClass, IntervalSummary, classify
 from .telemetry import Role, ValidatedSnapshot
-from .timeutil import day_length_h, elapsed_s, hour_key
+from .timeutil import add_hours, day_length_h, elapsed_s, hour_key
 
 MEAN_ROLES = (
     Role.TI,
@@ -98,6 +98,25 @@ def _local_date(t: datetime, ref: datetime) -> date:
     return (t.astimezone(ref.tzinfo) if ref.tzinfo is not None and t.tzinfo is not None else t).date()
 
 
+def _split(
+    incs: dict[str, tuple[float, datetime]], now: datetime, boundary: datetime
+) -> tuple[dict[str, float], dict[str, tuple[float, datetime]]]:
+    """Split each increment (covering ``since``→``now``) at ``boundary`` by elapsed time."""
+    before: dict[str, float] = {}
+    after: dict[str, tuple[float, datetime]] = {}
+    for k, (inc, since) in incs.items():
+        total = elapsed_s(since, now)
+        frac = min(1.0, max(0.0, elapsed_s(since, boundary) / total)) if total > 0 else 0.0
+        before[k] = inc * frac
+        after[k] = (inc - before[k], boundary)
+    return before, after
+
+
+def _add(a: _Acc, incs: dict[str, float]) -> None:
+    for k, v in incs.items():
+        a.deltas[k] = a.deltas.get(k, 0.0) + v  # key presence also marks the counter as seen
+
+
 class HourAccumulator:
     """Feed validated snapshots in time order; completed hours are returned by :meth:`add`."""
 
@@ -112,13 +131,24 @@ class HourAccumulator:
     def add(self, s: ValidatedSnapshot) -> list[HourRecord]:
         done: list[HourRecord] = []
         key = hour_key(s.time)
-        if self._acc is not None and key != self._acc.key:
-            done.append(self._finish(self._acc))
+        # Counter increments cover the interval since each counter's previous reading; they are
+        # computed before the hour rolls over so the part of the interval that lies in the closing
+        # hour (e.g. 23:55-00:00) is booked there, not to the next hour (or date).
+        incs, gap_dropped, stale = self._counter_increments(s)
+        old = self._acc
+        if old is not None and key != old.key:
+            to_old, incs = _split(incs, s.time, add_hours(old.key, 1.0))
+            _add(old, to_old)
+            old.counter_stale |= stale
+            done.append(self._finish(old))
             self._acc = None
         if self._acc is None:
             local = key.astimezone(s.time.tzinfo) if s.time.tzinfo is not None else key
             self._acc = _Acc(start=local, key=key)
         a = self._acc
+        _add(a, {k: inc for k, (inc, _) in incs.items()})
+        a.counter_stale |= stale
+        a.counter_gap |= gap_dropped
         dt = 0.0
         if self._last_time is not None:
             dt = elapsed_s(self._last_time, s.time)
@@ -140,10 +170,20 @@ class HourAccumulator:
             a.flow_min = min(a.flow_min, flow)
         a.defrost |= bool(s.get(Role.DEFROST))
         a.dhw |= bool(s.get(Role.DHW_ACTIVE))
+        return done
+
+    def _counter_increments(
+        self, s: ValidatedSnapshot
+    ) -> tuple[dict[str, tuple[float, datetime]], bool, bool]:
+        """Per counter: (increment, start of the interval it covers); whether an increment across a
+        midnight gap was dropped; whether any counter could not be read (stale bridge or a mapped
+        counter unavailable), so energy may still be outstanding."""
+        incs: dict[str, tuple[float, datetime]] = {}
+        dropped = False
         # Counters only from a live bridge: with a stale heartbeat HA still holds the last values, and
         # refreshing the baselines from them would hide the outage from the gap handling below.
         live = Role.HEARTBEAT not in s.issues
-        a.counter_stale |= not live
+        stale = not live or any(role in s.issues for role in COUNTERS)
         for role in COUNTERS if live else ():
             v = s.get(role)
             if v is None:
@@ -158,7 +198,7 @@ class HourAccumulator:
             same_day = seen is not None and _local_date(seen, s.time) == s.time.date()
             inc = 0.0
             if prev is not None and gap and not same_day:
-                a.counter_gap = True
+                dropped = True
             elif prev is not None:
                 if v >= prev:
                     inc = v - prev
@@ -168,8 +208,8 @@ class HourAccumulator:
                     v = prev  # small decrease: noise, keep the higher value
             self._last_counter[k] = v
             self.counter_time[k] = s.time
-            a.deltas[k] = a.deltas.get(k, 0.0) + inc
-        return done
+            incs[k] = (inc, seen if seen is not None else s.time)
+        return incs, dropped, stale
 
     def _finish(self, a: _Acc) -> HourRecord:
         means = {k: a.sums[k] / w for k, w in a.weights.items() if w > 0}
