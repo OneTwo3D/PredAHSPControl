@@ -21,7 +21,7 @@ Status legend: **V** verified from live state/attributes · **?** needs confirma
 | Compressor on | `binary_sensor.bridge0_mode_compressor` | – | V (no long-term statistics: binary) |
 | Compressor frequency | `sensor.bridge0_mode_compressor_rpm` | Hz, measurement | V. Usable for run/partial-hour detection in LTS |
 | Defrost | `binary_sensor.bridge0_mode_defrost_active` | – | V (no LTS) |
-| DHW active / valve | `binary_sensor.bridge0_dhw_dhw`, `_dhw_valve_dhw_tank`, `_dhw_dhw_demand` | – | ? semantics to confirm during a DHW cycle |
+| DHW running | `binary_sensor.bridge0_dhw_dhw_demand` | – | V: on exactly during DHW runs (e.g. 03:52–04:15 daily, matches compressor). `_dhw_dhw` = DHW function enabled (always on), `_dhw_valve_dhw_tank` always on, `_dhw_dhw_related_q` always off — not usable |
 | Electrical power | `sensor.bridge0_power_consumption_heatpump` | W | V (includes pump/controls, ?) |
 | Thermal power | `sensor.bridge0_power_production_heatpump` | W | V. Equals flow·cp·ΔT (bridge-calculated, not independent) |
 | Backup heater power | `sensor.bridge0_power_consumption_buh` | W | V. Zero all winter |

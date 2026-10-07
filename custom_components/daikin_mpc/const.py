@@ -39,7 +39,7 @@ SUGGESTED: Final[dict[str, str]] = {
     Role.DHW_HEAT_KWH.value: "sensor.bridge0_meters_energy_produced_compressor_dhw",
     Role.BUH_KWH.value: "sensor.bridge0_meters_electricity_consumed_backup_heating",
     Role.DEFROST.value: "binary_sensor.bridge0_mode_defrost_active",
-    Role.DHW_ACTIVE.value: "binary_sensor.bridge0_dhw_dhw",
+    Role.DHW_ACTIVE.value: "binary_sensor.bridge0_dhw_dhw_demand",  # dhw_dhw = DHW enabled, always on
     Role.HEATING_ENABLED.value: "switch.bridge0_mode_altherma_on",
     Role.HEARTBEAT.value: "sensor.bridge0_mode_date_time_daikin",
     Role.EXT_W.value: "sensor.kwh_meter_power",

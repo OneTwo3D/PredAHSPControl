@@ -5,6 +5,13 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.2.4] - 2026-10-07
+
+### Fixed
+- Suggested "DHW active" entity is now `binary_sensor.bridge0_dhw_dhw_demand` (on only while the cylinder
+  is being heated). `binary_sensor.bridge0_dhw_dhw` means "DHW enabled", is always on, and made every hour
+  count as DHW. Existing installs: Reconfigure and change the *DHW active* field.
+
 ## [0.2.3] - 2026-10-07
 
 ### Fixed

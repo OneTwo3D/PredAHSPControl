@@ -29,7 +29,7 @@ STATES = {
     "sensor.bridge0_meters_energy_produced_compressor_dhw": "3043",
     "sensor.bridge0_meters_electricity_consumed_backup_heating": "0",
     "binary_sensor.bridge0_mode_defrost_active": "off",
-    "binary_sensor.bridge0_dhw_dhw": "off",
+    "binary_sensor.bridge0_dhw_dhw_demand": "off",
     "switch.bridge0_mode_altherma_on": "on",
     "sensor.bridge0_mode_date_time_daikin": "We 2026-10-07 09:46",
     "sensor.kwh_meter_power": "420",
