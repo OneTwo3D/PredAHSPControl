@@ -289,3 +289,94 @@ def test_ha_client_refuses_webhooks_and_redirects(monkeypatch):
     finally:
         src.shutdown()
         target.shutdown()
+
+
+# --- round 2 ----------------------------------------------------------------------------
+def test_dp_keeps_the_path_needed_for_hard_limits():
+    eng = ShadowEngine(EngineConfig())
+    b = ThermalParams(178.35, 3178.78, 191.99)
+    to = [t for t in (7.0563, 13.9977, -6.5047, -7.3516) for _ in range(4)]
+    inp = PlanInputs(
+        datetime(2026, 1, 15, 18, tzinfo=UTC),
+        21.6943,
+        True,
+        21.0,
+        True,
+        to,
+        [eng.wc_lwt(x) for x in to],
+        [35.0] * 16,
+        [21.0] * 4,
+    )
+    plan = optimise(inp, b, eng.plant, eng.cop, OptimiserConfig(horizon_h=4))
+    assert plan.feasible and plan.min_ti_c >= 20.0
+
+
+def test_frozen_bridge_counters_do_not_hide_the_gap():
+    acc = HourAccumulator()
+    t = datetime(2026, 11, 2, 22, 0, tzinfo=UTC)
+    out = []
+    heat = 100.0
+    for i in range(12 * 4):  # 22:00 .. 02:00
+        ti = t + timedelta(minutes=5 * i)
+        frozen = 18 <= i < 30  # 23:30 .. 00:30 bridge frozen, HA keeps the old value
+        if not frozen:
+            heat += 0.1
+        else:
+            heat_frozen = heat
+        s = snap(ti, heat_kwh=heat_frozen if frozen else heat)
+        if frozen:
+            s = validate(
+                Snapshot(
+                    ti, {**{r: Reading(v) for r, v in s.values.items()}, Role.HEARTBEAT: Reading(1.0, 3600)}
+                )
+            )
+        out += acc.add(s)
+    assert any(h.counter_gap for h in out)
+
+
+def test_gap_across_midnight_drops_the_source_day_too():
+    acc, days = HourAccumulator(), DayAggregator()
+    t = datetime(2026, 11, 1, 0, 0, tzinfo=UTC)
+    recs = []
+    heat = 100.0
+    for i in range(12 * 50):
+        ti = t + timedelta(minutes=5 * i)
+        heat += 1 / 12
+        if datetime(2026, 11, 1, 23, 30, tzinfo=UTC) <= ti < datetime(2026, 11, 2, 0, 30, tzinfo=UTC):
+            continue  # outage
+        for h in acc.add(snap(ti, heat_kwh=heat)):
+            r = days.add(h)
+            if r:
+                recs.append(r.day)
+    assert "2026-11-01" not in recs and "2026-11-02" not in recs
+
+
+def test_corrupt_cop_and_pending_day_state_rejected():
+    eng = ShadowEngine(EngineConfig())
+    st = eng.to_dict()
+    st["cop_learner"]["standby_w"] = -10000
+    warn = eng.load_dict(st)
+    assert eng.standby_w == EngineConfig().standby_w and any("COP" in w for w in warn)
+    st = eng.to_dict()
+    st["pending_day"] = DayRecord("2026-11-02", 24, 21.0, 5.0, 20.0, 6.0, 0, 0).to_dict() | {"ti": "21.0"}
+    eng.load_dict(st)
+    assert isinstance(eng.pending_day.ti, float)  # normalised, so later arithmetic cannot fail
+    st["pending_day"]["ti"] = "hot"
+    eng2 = ShadowEngine(EngineConfig())
+    assert any("pending day" in w for w in eng2.load_dict(st)) and eng2.pending_day is None
+
+
+def test_feasibility_and_reported_range_agree():
+    inp = PlanInputs(
+        datetime(2026, 1, 15, 18, tzinfo=UTC),
+        22.01,
+        False,
+        21.0,
+        False,
+        [5.0] * 4,
+        [30.0] * 4,
+        [10.0] * 4,
+        [21.0],
+    )
+    r = evaluate([21.0], inp, B, P, lambda _: 3.0, OptimiserConfig(horizon_h=1))
+    assert r.feasible == (r.min_ti_c >= 20.0 and r.max_ti_c <= 22.0)

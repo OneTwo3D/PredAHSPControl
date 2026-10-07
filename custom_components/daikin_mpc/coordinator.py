@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -154,24 +153,14 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
                 blocking=True,
                 return_response=True,
             )
-            items = (resp or {}).get(entity, {}).get("forecast", [])  # type: ignore[union-attr]
             st = self.hass.states.get(entity)
             unit = st.attributes.get("temperature_unit") if st is not None else None
-            fc: list[tuple[datetime, float]] = []
-            for it in items:
-                t = dt_util.parse_datetime(str(it.get("datetime")))
-                temp = it.get("temperature")
-                if t is None or temp is None:
-                    continue
-                v = temperature_c(float(temp), unit)
-                # NaN or implausible values would propagate through the forecast and the optimiser
-                if math.isfinite(v) and -40.0 <= v <= 50.0:
-                    fc.append((dt_util.as_local(t), v))
+            fc = _parse_forecast(resp, entity, unit)
             self._weather = sorted(fc) or None
             self._weather_fetched = now
             self.weather_error = None if fc else "empty forecast"
-        except (HomeAssistantError, ValueError, TypeError) as err:
-            self.weather_error = str(err)
+        except Exception as err:
+            self.weather_error = str(err) or type(err).__name__
             # keep the last forecast while it still covers the future; the engine falls back to
             # persistence when it is missing
             if self._weather and self._weather[-1][0] < now:
@@ -183,10 +172,16 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             (CONF_PREDHEAT_H1, "predheat_1h", 1.0),
             (CONF_PREDHEAT_H8, "predheat_8h", 8.0),
         ):
-            rd = self._reading(self.mapping.get(key), None)
+            rd = self._reading(self.mapping.get(key), Role.TI)  # a room temperature: same units/range
             # Predheat refreshes every few minutes; an old value means it is disabled or stopped, and
             # scoring that stale forecast would distort the comparison.
-            if rd is not None and rd.value is not None and rd.age_s <= EXTERNAL_MAX_AGE_S:
+            if (
+                rd is not None
+                and rd.value is not None
+                and math.isfinite(rd.value)
+                and 5.0 <= rd.value <= 35.0
+                and rd.age_s <= EXTERNAL_MAX_AGE_S
+            ):
                 out[name] = (horizon, rd.value)
         return out
 
@@ -261,3 +256,25 @@ def _setpoint_grid(lo: float, hi: float) -> tuple[float, ...]:
         out.append(round(v, 1))
         v += 0.5
     return tuple(out) or (round(lo * 2) / 2,)
+
+
+def _parse_forecast(resp: object, entity: str, unit: str | None) -> list[tuple[datetime, float]]:
+    """Hourly (local time, °C) points from a ``weather.get_forecasts`` response; malformed items skipped."""
+    body = resp.get(entity) if isinstance(resp, dict) else None
+    items = body.get("forecast") if isinstance(body, dict) else None
+    fc: list[tuple[datetime, float]] = []
+    for it in items if isinstance(items, list) else ():
+        if not isinstance(it, dict):
+            continue
+        t = dt_util.parse_datetime(str(it.get("datetime")))
+        temp = it.get("temperature")
+        if t is None or temp is None:
+            continue
+        try:
+            v = temperature_c(float(temp), unit)
+        except (TypeError, ValueError):
+            continue
+        # NaN or implausible values would propagate through the forecast and the optimiser
+        if math.isfinite(v) and -40.0 <= v <= 50.0:
+            fc.append((dt_util.as_local(t), v))
+    return sorted(fc)

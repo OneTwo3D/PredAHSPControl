@@ -1,10 +1,11 @@
 # Adversarial Codex review — how to run
 
-Prerequisite: `OPENAI_API_KEY` set in the environment. Install with `npm i -g @openai/codex`.
+Prerequisite: `codex login --device-auth` (ChatGPT account) or `OPENAI_API_KEY`. Install with `npm i -g @openai/codex`.
 
 ```bash
-codex exec --sandbox read-only --skip-git-repo-check "$(sed -n '/^## Prompt/,$p' tools/codex_review.md | tail -n +2)" \
-  > review_codex.md
+codex exec --sandbox read-only --skip-git-repo-check -o review_codex.md \
+  "$(sed -n '/^## Prompt/,$p' tools/codex_review.md | tail -n +2)" < /dev/null > codex_run.log 2>&1
+# stdin must be closed (< /dev/null), otherwise codex waits for more input when run in the background
 ```
 
 Then check every finding against the code (reproduce with a test where possible), fix the confirmed bugs

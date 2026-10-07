@@ -451,10 +451,32 @@ class ShadowEngine:
         if not pdict:
             self.pending_day = None
             return
-        rec = DayRecord(**dict(pdict))
-        date.fromisoformat(rec.day)
-        if not all(math.isfinite(float(x)) for x in (rec.ti, rec.to, rec.heat_kwh, rec.length_h)):
-            raise ValueError("non-finite pending day")
+        raw = dict(pdict)
+
+        def num(key: str, lo: float, hi: float, default: float | None = None) -> float:
+            v = float(raw[key]) if key in raw else default
+            if v is None or not (math.isfinite(v) and lo <= v <= hi):
+                raise ValueError(f"pending day {key} invalid")
+            return v
+
+        def opt(key: str, lo: float, hi: float) -> float | None:
+            return None if raw.get(key) is None else num(key, lo, hi)
+
+        # normalised and typed, so a stored string can never reach the learner's arithmetic
+        rec = DayRecord(
+            day=date.fromisoformat(str(raw["day"])).isoformat(),
+            hours=int(num("hours", 0, 25)),
+            ti=num("ti", 5, 35),
+            to=num("to", -40, 50),
+            heat_kwh=num("heat_kwh", 0, 500),
+            elec_kwh=num("elec_kwh", 0, 500),
+            dhw_hours=int(num("dhw_hours", 0, 25)),
+            defrost_hours=int(num("defrost_hours", 0, 25)),
+            ext_kwh=opt("ext_kwh", 0, 500),
+            heating_ext_kwh=opt("heating_ext_kwh", 0, 500),
+            standby_w=opt("standby_w", 0, 200),
+            length_h=num("length_h", 23, 25, 24.0),
+        )
         self.pending_day = rec
 
     def _load_counters(self, d: dict[str, Any]) -> None:

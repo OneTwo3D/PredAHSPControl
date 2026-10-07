@@ -191,7 +191,7 @@ def evaluate(
     ti, running = inp.ti0_c, inp.running0 and inp.heating_enabled
     obj = energy = viol = 0.0
     starts = 0
-    lo, hi = ti, ti
+    lo, hi = math.inf, -math.inf  # the initial temperature is given, not planned: range covers the plan
     tis, elec = [ti], []
     prev = inp.current_setpoint_c
     for h, sp in enumerate(setpoints_per_hour):
@@ -220,6 +220,23 @@ def _rank(n: _Node) -> tuple[float, float]:
     return (n.viol if n.viol > _VIOL_EPS else 0.0, n.cost)
 
 
+def _keep(group: list[_Node] | None, cand: _Node) -> list[_Node]:
+    """Best-ranked, warmest and coolest node of a merge group (deduplicated)."""
+    if not group:
+        return [cand]
+    pool = [*group, cand]
+    keep = [
+        min(pool, key=_rank),
+        max(pool, key=lambda n: (n.ti, -n.cost)),
+        min(pool, key=lambda n: (n.ti, n.cost)),
+    ]
+    out: list[_Node] = []
+    for n in keep:
+        if all(n is not m for m in out):
+            out.append(n)
+    return out
+
+
 def optimise(
     inp: PlanInputs,
     building: ThermalParams,
@@ -243,11 +260,14 @@ def optimise(
         inp.ti0_c,
         (),
     )
-    frontier: dict[tuple[float, int, bool], _Node] = {(start.sp, 0, start.running): start}
+    # Per merge key keep up to three paths: the best-ranked, the warmest and the coolest. Keeping only
+    # the cheapest can discard the slightly warmer (or cooler) path that is needed later to stay
+    # within the hard limits, and then report a false "cannot be held".
+    frontier: dict[tuple[float, int, bool], list[_Node]] = {(start.sp, 0, start.running): [start]}
     nodes = 0
     for h in range(hours):
-        nxt: dict[tuple[float, int, bool], _Node] = {}
-        for node in frontier.values():
+        nxt: dict[tuple[float, int, bool], list[_Node]] = {}
+        for node in (n for group in frontier.values() for n in group):
             for sp in cfg.setpoints:
                 move = cfg.w_move_p_per_half_k * abs(sp - node.sp) / 0.5
                 ti, running, o, e, v, s, a, b, _, _ = _simulate_hour(
@@ -267,10 +287,9 @@ def optimise(
                     (*node.path, sp),
                 )
                 key = (sp, round(ti / cfg.ti_bin_k), running)
-                if key not in nxt or _rank(cand) < _rank(nxt[key]):
-                    nxt[key] = cand
+                nxt[key] = _keep(nxt.get(key), cand)
         frontier = nxt
-    best = min(frontier.values(), key=_rank)
+    best = min((n for group in frontier.values() for n in group), key=_rank)
     result = evaluate(best.path, inp, building, plant, cop, cfg)
     result.nodes = nodes
     return result

@@ -114,12 +114,23 @@ class CopLearner:
             n = len(self.edges_c) - 1
             if not (len(heat) == len(elec) == len(to_w) == n):
                 return False
-            if not all(math.isfinite(x) and x >= 0 for x in heat + elec):
+            if not all(math.isfinite(x) and x >= 0 for x in heat + elec) or not all(
+                math.isfinite(x) for x in to_w
+            ):
                 return False
-            sb = d.get("standby_w")
-            self.heat, self.elec, self.to_w = heat, elec, to_w
-            self.standby_w = float(sb) if sb is not None and math.isfinite(float(sb)) else None
-            self.days = int(d.get("days", 0))
-            return True
-        except (KeyError, TypeError, ValueError):
+            for h, e, t in zip(heat, elec, to_w, strict=True):
+                # each populated bin must give a plausible COP and a mean outdoor temperature in range
+                if e > 0 and not (1.0 <= h / e <= 7.0 and -40.0 <= t / e <= 50.0):
+                    return False
+            sb_raw = d.get("standby_w")
+            sb = float(sb_raw) if sb_raw is not None else None
+            if sb is not None and not (math.isfinite(sb) and 0 <= sb <= 200):
+                return False
+            days = int(d.get("days", 0))
+            if days < 0:
+                return False
+        except (AttributeError, KeyError, TypeError, ValueError):
             return False
+        self.heat, self.elec, self.to_w = heat, elec, to_w
+        self.standby_w, self.days = sb, days
+        return True

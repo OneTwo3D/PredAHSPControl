@@ -5,6 +5,29 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.1] - 2026-10-07
+
+Second review round (Codex, 10 findings on 0.4.0), see `docs/review_2026-10.md`.
+
+### Fixed
+- **Optimiser could report "cannot be held" although a compliant plan existed:** state merging kept
+  only the cheapest path per temperature bin; it now also keeps the warmest and coolest. Replay: days
+  below 20 °C 4 → 2 (the remaining two are physically unavoidable in the model). Runtime ≈ 0.7 s per plan.
+- "Feasible" and the reported room range now both cover the planned period (not the given start value).
+- Meter counters are only read while the bridge heartbeat is fresh, so a frozen bridge cannot hide an
+  outage; a counter gap across midnight now invalidates both days.
+- Stored COP and pending-day state fully validated and typed (e.g. negative standby or text values were
+  accepted and could break later updates).
+- Malformed weather responses no longer interrupt the update; Predheat comparison values are converted
+  and range-checked like room temperatures.
+
+### Tools
+- `ha_client.py`: WebSocket connections that were redirected to another origin are refused before the
+  token is sent (requires `websockets>=14`).
+- Offline daily energy keeps increments across same-day gaps (booked to the next reading) and drops days
+  touched by a gap across midnight, instead of silently undercounting.
+- `tools/codex_review.md`: run Codex with stdin closed (it otherwise waits for input).
+
 ## [0.4.0] - 2026-10-07
 
 Fixes from an adversarial code review (Codex), see `docs/review_2026-10.md`.

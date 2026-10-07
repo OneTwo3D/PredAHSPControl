@@ -138,7 +138,10 @@ class HourAccumulator:
             a.flow_min = min(a.flow_min, flow)
         a.defrost |= bool(s.get(Role.DEFROST))
         a.dhw |= bool(s.get(Role.DHW_ACTIVE))
-        for role in COUNTERS:
+        # Counters only from a live bridge: with a stale heartbeat HA still holds the last values, and
+        # refreshing the baselines from them would hide the outage from the gap handling below.
+        live = Role.HEARTBEAT not in s.issues
+        for role in COUNTERS if live else ():
             v = s.get(role)
             if v is None:
                 continue
@@ -216,7 +219,9 @@ class DayAggregator:
         day = h.start.date().isoformat()
         out = None
         if self._day is not None and day != self._day:
-            out = self._finish()
+            # a counter gap reaching into this hour started on an earlier date, so that date's total
+            # is incomplete as well
+            out = None if h.counter_gap else self._finish()
             self._hours = []
         self._day = day
         self._tz = h.start.tzinfo

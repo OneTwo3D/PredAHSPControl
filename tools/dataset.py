@@ -39,10 +39,10 @@ def load_hourly(csv_path: str | Path) -> pd.DataFrame:
         # counted after a reset.
         src = f"{c}_sum" if f"{c}_sum" in h else f"{c}_state"
         if src in h:
-            h[f"d_{c}"] = h[src].diff().clip(lower=0)
+            _increments(h, src, c)
     for c in HOUR_METERS:
         if f"{c}_max" in h:
-            h[f"d_{c}"] = h[f"{c}_max"].diff().clip(lower=0)
+            _increments(h, f"{c}_max", c)
     h["cls"] = [
         classify(
             IntervalSummary(
@@ -61,6 +61,29 @@ def load_hourly(csv_path: str | Path) -> pd.DataFrame:
     return h
 
 
+def _increments(h: pd.DataFrame, src: str, key: str) -> None:
+    """Counter increments between consecutive valid readings.
+
+    ``d_<key>``: per-hour increment, NaN after a missing reading (cannot be placed in an hour).
+    ``dd_<key>``: increment booked to the hour of the next valid reading, so daily totals keep the
+    energy of same-day gaps. ``gapx_<key>``: the gap behind this reading crosses local midnight, so
+    neither day's total is complete.
+    """
+    v = h[src].dropna()
+    inc = v.diff().clip(lower=0)
+    prev_t = v.index.to_series().shift()
+    span = v.index.to_series() - prev_t
+    one_h = span == pd.Timedelta(hours=1)
+    h[f"d_{key}"] = inc.where(one_h).reindex(h.index)
+    h[f"dd_{key}"] = inc.reindex(h.index)
+    crosses = (~one_h) & prev_t.notna() & (prev_t.dt.date != v.index.to_series().dt.date)
+    h[f"gapx_{key}"] = crosses.reindex(h.index, fill_value=False).astype(bool)
+    # the earlier date's total is incomplete too
+    src_days = set(prev_t[crosses].dt.date)
+    if src_days:
+        h.loc[[t.date() in src_days for t in h.index], f"gapx_{key}"] = True
+
+
 def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
     """Daily aggregates; counter sums require ≥ 22 valid hours."""
     g = h.resample("D")
@@ -75,8 +98,11 @@ def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
         }
     )
     for c in (*COUNTERS, *HOUR_METERS):
-        if f"d_{c}" in h:
-            d[c] = g[f"d_{c}"].sum(min_count=22)
+        if f"dd_{c}" in h:
+            # complete accounting: every increment of the day included (same-day gaps are booked to the
+            # next reading); days touched by a gap across midnight are dropped
+            total = g[f"dd_{c}"].sum(min_count=1)
+            d[c] = total.where(~g[f"gapx_{c}"].any())
     d["dti_next"] = d["ti"].shift(-1) - d["ti"]
     d["dhw_hours"] = g["cls"].apply(lambda s: int((s == IntervalClass.DHW.value).sum()))
     return d

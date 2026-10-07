@@ -97,7 +97,13 @@ async def _ws_calls(messages: list[dict[str, Any]]) -> list[Any]:
 
     ws_url = _base_url().replace("https://", "wss://").replace("http://", "ws://") + "/api/websocket"
     results: list[Any] = []
-    async with websockets.connect(ws_url, max_size=2**28, open_timeout=30) as ws:
+    conn = websockets.connect(ws_url, max_size=2**28, open_timeout=30)
+    async with conn as ws:
+        # websockets follows redirects, also to other hosts; the token is sent after connecting, so
+        # refuse unless the final URI is still the configured origin
+        final = urllib.parse.urlsplit(str(getattr(conn, "uri", "")))
+        if (final.scheme, final.netloc) != urllib.parse.urlsplit(ws_url)[:2]:
+            raise PermissionError(f"WebSocket redirected to {final.netloc or 'unknown'}; refused")
         await ws.recv()  # auth_required
         await ws.send(json.dumps({"type": "auth", "access_token": _token()}))
         if json.loads(await ws.recv()).get("type") != "auth_ok":
