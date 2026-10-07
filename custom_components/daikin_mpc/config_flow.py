@@ -36,6 +36,7 @@ _ANY = selector.EntitySelector(selector.EntitySelectorConfig())
 # the entity picker cannot always hold them, so these are entered as text.
 _TEXT = selector.TextSelector()
 
+_OPTIONAL_EXTERNAL = {CONF_PREDHEAT_H1, CONF_PREDHEAT_H8}
 _BINARY_KEYS = {Role.DEFROST.value, Role.DHW_ACTIVE.value, Role.HEATING_ENABLED.value}
 
 
@@ -60,13 +61,19 @@ class DaikinMpcConfigFlow(ConfigFlow, domain=DOMAIN):
     def _validate(self, user_input: dict[str, Any]) -> dict[str, str]:
         errors: dict[str, str] = {}
         for key, entity_id in user_input.items():
+            if key in _OPTIONAL_EXTERNAL:
+                continue  # published by Predbat only while it runs; may be absent temporarily
             if entity_id and self.hass.states.get(entity_id) is None:
                 errors[key] = "entity_not_found"
         return errors
 
     def _suggested(self, current: dict[str, Any] | None = None) -> dict[str, Any]:
         """Current values first; verified defaults for anything not yet mapped."""
-        defaults = {k: v for k, v in SUGGESTED.items() if self.hass.states.get(v) is not None}
+        defaults = {
+            k: v
+            for k, v in SUGGESTED.items()
+            if k in _OPTIONAL_EXTERNAL or self.hass.states.get(v) is not None
+        }
         return {**defaults, **{k: v for k, v in (current or {}).items() if v}}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

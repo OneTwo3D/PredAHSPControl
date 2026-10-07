@@ -169,3 +169,15 @@ async def test_reconfigure_adds_missing_roles_and_keeps_entry(hass: HomeAssistan
     await hass.async_block_till_done()
     assert entry.data["ext_w"] == "sensor.kwh_meter_power"
     assert entry.data["predheat_h1"] == "predheat.internal_temp_h1"
+
+
+async def test_predheat_fields_accepted_while_predbat_is_down(hass: HomeAssistant) -> None:
+    _set_states(hass)
+    hass.states.async_remove("predheat.internal_temp_h1")
+    hass.states.async_remove("predheat.internal_temp_h8")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    data = {k: v for k, v in SUGGESTED.items() if v in STATES}
+    with patch("custom_components.daikin_mpc.async_setup_entry", return_value=True):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["predheat_h1"] == "predheat.internal_temp_h1"

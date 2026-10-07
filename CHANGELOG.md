@@ -5,6 +5,12 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.2.3] - 2026-10-07
+
+### Fixed
+- Setup/reconfigure no longer rejects the Predheat comparison entities when Predbat is not running
+  (its `predheat.*` states only exist while Predbat runs); they are always pre-filled.
+
 ## [0.2.2] - 2026-10-07
 
 ### Added
