@@ -37,3 +37,7 @@ files = ["custom_components/daikin_mpc/core"]
 module = ["custom_components.daikin_mpc", "custom_components.daikin_mpc.coordinator", "custom_components.daikin_mpc.sensor", "custom_components.daikin_mpc.config_flow", "custom_components.daikin_mpc.diagnostics", "custom_components.daikin_mpc.const", "daikin_mpc", "daikin_mpc.coordinator", "daikin_mpc.sensor", "daikin_mpc.config_flow", "daikin_mpc.diagnostics", "daikin_mpc.const"]
 follow_imports = "skip"
 ignore_errors = true
+
+[tool.setuptools.packages.find]
+include = ["custom_components*"]
+namespaces = true
