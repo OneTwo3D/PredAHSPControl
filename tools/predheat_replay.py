@@ -11,7 +11,9 @@ Parameter sets compared:
 * ``fitted``     – physically fitted values from ``tools/fit_offline.py`` (UA, gains, C, COP, min output)
 * ``calibrated`` – ``fitted`` plus a pattern search on Predheat-internal parameters, trained on even ISO weeks
 
-All sets are evaluated on the odd-week hold-out days.
+All sets are evaluated on the odd-week hold-out days. Caveat: the physical parameters in ``fitted`` (and
+therefore in ``calibrated``) come from ``fit_offline.py`` on the whole season, hold-out days included; only
+the pattern search is train-only. The hold-out error of those two sets is therefore somewhat optimistic.
 
 Usage::
 
@@ -100,7 +102,8 @@ class Day:
 
 def build_days(h: pd.DataFrame, start: str, end: str, to_col: str) -> list[Day]:
     d = ds.season(ds.daily(h, to_col=to_col), start, end).dropna(subset=["elec_kwh", "ti", "to"])
-    d = d[d.hours >= 24]
+    # whole 24-hour days only: the simulation and comparison assume 24 hourly steps (DST days excluded)
+    d = d[(d.hours >= 24) & (d.day_h == 24)]
     return [Day(t, h, to_col, float(e)) for t, e in d.elec_kwh.items()]
 
 
@@ -273,6 +276,10 @@ def main(argv: list[str] | None = None) -> int:
             "## Hold-out error",
             "",
             *rows,
+            "",
+            "The `fitted` and `calibrated` sets use physical parameters (UA, gains, C, COP) fitted on the whole "
+            "season, hold-out days included, so their hold-out errors are somewhat optimistic; `current` is "
+            "unaffected.",
             "",
             "## Parameters",
             "",

@@ -18,6 +18,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ha_client import ws_calls
@@ -32,10 +33,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--period", default="hour", choices=["5minute", "hour", "day"])
     ap.add_argument("--entities", default=str(Path(__file__).with_name("entities.json")))
     ap.add_argument("--out", default="data/lts_hour.csv")
+    ap.add_argument("--tz", default="Europe/London", help="time zone of naive --start/--end values")
     a = ap.parse_args(argv)
+    tz = ZoneInfo(a.tz)
+
+    def to_utc(text: str) -> str:
+        t = datetime.fromisoformat(text)
+        # naive values are local to --tz, not to the machine running the export
+        return (t if t.tzinfo else t.replace(tzinfo=tz)).astimezone(UTC).isoformat()
 
     roles: dict[str, str] = json.loads(Path(a.entities).read_text())["statistics"]
-    to_utc = lambda s: datetime.fromisoformat(s).astimezone(UTC).isoformat()  # noqa: E731
     msg = {
         "type": "recorder/statistics_during_period",
         "start_time": to_utc(a.start),

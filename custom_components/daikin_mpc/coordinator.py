@@ -6,6 +6,7 @@ Read-only towards devices: the only service it calls is ``weather.get_forecasts`
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -52,6 +53,8 @@ from .core.cost_model import (
 from .core.engine import EngineConfig, EngineStatus, ShadowEngine
 from .core.optimiser import OptimiserConfig, Recommendation
 from .core.telemetry import BINARY_ROLES, Reading, Role, Snapshot, validate
+from .core.timeutil import elapsed_s
+from .core.units import temperature_c, to_core_unit
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -105,7 +108,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         await self._store.async_save(self.engine.to_dict())
 
     # ------------------------------------------------------------------------------------------
-    def _reading(self, entity_id: str | None, binary: bool, heartbeat: bool = False) -> Reading | None:
+    def _reading(self, entity_id: str | None, role: Role | None) -> Reading | None:
         if not entity_id:
             return None
         st = self.hass.states.get(entity_id)
@@ -113,19 +116,25 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             return Reading(None)
         last = getattr(st, "last_reported", None) or st.last_updated
         age = (dt_util.utcnow() - last).total_seconds()
-        if heartbeat:
+        if role is Role.HEARTBEAT:
             return Reading(1.0, age)
-        if binary:
+        if role in BINARY_ROLES:
             return Reading(1.0 if st.state == STATE_ON else 0.0, age)
         try:
-            return Reading(float(st.state), age)
+            value = float(st.state)
         except ValueError:
             return Reading(None, age)
+        if role is None:
+            return Reading(value, age)
+        try:
+            return Reading(to_core_unit(role, value, st.attributes.get("unit_of_measurement")), age)
+        except ValueError as err:
+            return Reading(None, age, str(err))
 
     def _snapshot(self, now: datetime) -> Snapshot:
         readings: dict[Role, Reading] = {}
         for role in Role:
-            rd = self._reading(self.mapping.get(role.value), role in BINARY_ROLES, role is Role.HEARTBEAT)
+            rd = self._reading(self.mapping.get(role.value), role)
             if rd is not None:
                 readings[role] = rd
         return Snapshot(now, readings)
@@ -134,7 +143,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         entity = self.mapping.get(CONF_WEATHER)
         if not entity:
             return
-        if self._weather_fetched and now - self._weather_fetched < WEATHER_REFRESH:
+        if self._weather_fetched and elapsed_s(self._weather_fetched, now) < WEATHER_REFRESH.total_seconds():
             return
         try:
             resp = await self.hass.services.async_call(
@@ -146,12 +155,18 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
                 return_response=True,
             )
             items = (resp or {}).get(entity, {}).get("forecast", [])  # type: ignore[union-attr]
+            st = self.hass.states.get(entity)
+            unit = st.attributes.get("temperature_unit") if st is not None else None
             fc: list[tuple[datetime, float]] = []
             for it in items:
                 t = dt_util.parse_datetime(str(it.get("datetime")))
                 temp = it.get("temperature")
-                if t is not None and temp is not None:
-                    fc.append((dt_util.as_local(t), float(temp)))
+                if t is None or temp is None:
+                    continue
+                v = temperature_c(float(temp), unit)
+                # NaN or implausible values would propagate through the forecast and the optimiser
+                if math.isfinite(v) and -40.0 <= v <= 50.0:
+                    fc.append((dt_util.as_local(t), v))
             self._weather = sorted(fc) or None
             self._weather_fetched = now
             self.weather_error = None if fc else "empty forecast"
@@ -168,7 +183,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             (CONF_PREDHEAT_H1, "predheat_1h", 1.0),
             (CONF_PREDHEAT_H8, "predheat_8h", 8.0),
         ):
-            rd = self._reading(self.mapping.get(key), False)
+            rd = self._reading(self.mapping.get(key), None)
             # Predheat refreshes every few minutes; an old value means it is disabled or stopped, and
             # scoring that stale forecast would distort the comparison.
             if rd is not None and rd.value is not None and rd.age_s <= EXTERNAL_MAX_AGE_S:
@@ -183,7 +198,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             status = self.engine.process(snap, self._weather, self._external())
         except Exception as err:  # never let a model error take HA down; surface it instead
             raise UpdateFailed(f"engine error: {err}") from err
-        await self._async_optimise(now, snap)
+        await self._async_optimise(now, snap, status.telemetry_ok)
         status.recommendation = self.recommendation
         status.cost_source = self.cost_source
         self._store.async_delay_save(self.engine.to_dict, SAVE_DELAY_S)
@@ -201,7 +216,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             losses = [float(self.hass.states.get(e).state) for e in PREDBAT_LOSSES]  # type: ignore[union-attr]
             eff = efficiency_from_predbat(*losses)
         except (AttributeError, TypeError, ValueError):
-            pass
+            pass  # Predbat not running or settings missing: nominal efficiency
         return CostProvider(
             tariff=self.fallback_import,
             export_tariff=self.fallback_export,
@@ -211,13 +226,22 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             export_series=series(PREDBAT_RATES_EXPORT),
         )
 
-    async def _async_optimise(self, now: datetime, snap: Any) -> None:
-        if self._last_optimise is not None and now - self._last_optimise < OPTIMISE_INTERVAL:
+    async def _async_optimise(self, now: datetime, snap: Any, telemetry_ok: bool) -> None:
+        if not telemetry_ok:
+            # never show a plan built on data that is no longer valid; retry on the next poll
+            self.recommendation = None
+            self._last_optimise = None
+            return
+        if (
+            self.recommendation is not None
+            and self._last_optimise is not None
+            and elapsed_s(self._last_optimise, now) < OPTIMISE_INTERVAL.total_seconds()
+        ):
             return
         self._last_optimise = now
-        cost = self._cost_provider()
-        self.cost_source = cost.source
         try:
+            cost = self._cost_provider()  # Predbat attributes are external data: keep inside the guard
+            self.cost_source = cost.source
             self.recommendation = await self.hass.async_add_executor_job(
                 self.engine.recommend, snap, self._weather, cost, self.opt_cfg, self.comfort_periods
             )

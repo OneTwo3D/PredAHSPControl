@@ -164,9 +164,12 @@ class CostProvider:
         return f"{base}, {'battery/export-aware' if self.basis == 'battery' else 'raw import tariff'}"
 
 
-def parse_rate_series(results: dict[str, float] | None) -> list[tuple[datetime, float]] | None:
-    """Convert Predbat's ``results`` mapping (ISO time -> rate) into a sorted series."""
-    if not results:
+def parse_rate_series(results: object) -> list[tuple[datetime, float]] | None:
+    """Convert Predbat's ``results`` mapping (ISO time -> rate) into a sorted series.
+
+    Anything that is not such a mapping (external data) gives None, i.e. the fixed tariff is used.
+    """
+    if not isinstance(results, dict) or not results:
         return None
     out: list[tuple[datetime, float]] = []
     for k, v in results.items():

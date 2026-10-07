@@ -21,7 +21,8 @@ HACS cannot install from a **private** GitHub repository (not even as a custom r
    restart HA. Repeat for updates.
 
 Then *Settings → Devices & services → Add integration → Daikin MPC*. The form is pre-filled with the
-verified entities (see `docs/entity_mapping.md`); check and submit. Options (⋮ → *Configure*) hold the
+verified entities (see `docs/entity_mapping.md`); check and submit. The bridge heartbeat (an entity that
+changes every minute, e.g. `sensor.bridge0_mode_date_time_daikin`) is required since 0.4.0. Options (⋮ → *Configure*) hold the
 model priors and a learning on/off switch.
 
 ## First checks (first hour)

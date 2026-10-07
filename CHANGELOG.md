@@ -5,6 +5,47 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.0] - 2026-10-07
+
+Fixes from an adversarial code review (Codex), see `docs/review_2026-10.md`.
+
+### Fixed
+- **Daylight saving (clocks go back 25 Oct):** all elapsed-time arithmetic now in UTC. Previously the
+  repeated 01:00 hour merged into one, sample intervals went negative, forecasts and plan times shifted by
+  an hour, and 23/25-hour days were treated as 24 h in the building learner and offline fit.
+- **Meter counters after a restart/outage:** increments across a gap are no longer booked into the first
+  hour after it; across midnight they are dropped and that day is not used for learning (counter
+  timestamps are now persisted).
+- **Flow-temperature offset** is learned only during space heating (DHW and defrost had shifted it by
+  several K).
+- **Building learner** only pairs consecutive days.
+- **Hard comfort limits are now strict:** plans are ranked by time outside 20–22 °C first, then cost, so
+  no price can buy a violation; "feasible" no longer has a hidden 0.05 K tolerance.
+- **Standby no longer counted twice** in the electricity forecast: the COP now excludes standby (prior
+  recomputed: 3.06 at 1 °C … 4.82 at 13 °C); standby is added once. Learned COP data is reset (new basis).
+- **Units:** entities in Wh/MWh, kW, °F/K, L/h or m³/h are converted; unsupported units are reported
+  instead of misread. Weather forecasts use the entity's temperature unit; NaN or implausible values are
+  ignored.
+- Weather points in the past no longer distort the outdoor-temperature forecast.
+- Malformed Predbat rate attributes fall back to the configured tariff instead of failing the update.
+- Corrupt stored state never prevents start-up (each section falls back to priors; covariance checked).
+- Recommendations are cleared as soon as telemetry becomes invalid, and recomputed on the next poll
+  instead of after 15 minutes (e.g. after HA restarts before the bridge is back); plan times refer to
+  when the plan was made. Schedule text marks the next day ("18:00–18:00 next day").
+- Optimiser validates input lengths (no crash on short price/forecast series).
+
+### Changed
+- **The bridge heartbeat entity is now required** (P1P2MQTT publishes on change only; without it a frozen
+  bridge cannot be detected). Map it via *Reconfigure* if not set.
+
+### Tools
+- `ha_client.py`: exact read-only endpoint allowlist (the `/api/` prefix admitted GET webhooks);
+  redirects refused so the token is never forwarded.
+- `ha_export.py`: naive dates are Europe/London (option `--tz`), not the machine's time zone.
+- Offline fit: hourly windows never span gaps or DHW exclusions; counter increments from statistics
+  `sum` (reset-adjusted); actual day lengths. Replays handle DST days; Predheat replay notes that
+  `fitted`/`calibrated` hold-out errors are optimistic (physical parameters fitted on all days).
+
 ## [0.3.1] - 2026-10-07
 
 ### Added

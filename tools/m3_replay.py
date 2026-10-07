@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +42,7 @@ from custom_components.daikin_mpc.core.cost_model import (
 )
 from custom_components.daikin_mpc.core.engine import EngineConfig, ShadowEngine, comfort_targets
 from custom_components.daikin_mpc.core.optimiser import OptimiserConfig, PlanInputs, evaluate, optimise
+from custom_components.daikin_mpc.core.timeutil import add_hours
 
 STEPS_PER_H = 4
 COMFORT = parse_periods("07:00-09:00=21, 18:00-24:00=21")
@@ -56,7 +57,8 @@ def day_inputs(
     x_hour = np.arange(24) * STEPS_PER_H + STEPS_PER_H / 2
     x = np.arange(24 * STEPS_PER_H)
     to = np.interp(x, x_hour, hh.to_mean.to_numpy()).tolist()
-    times = [start.to_pydatetime() + timedelta(minutes=15 * i + 7) for i in range(len(to))]
+    t0 = start.to_pydatetime()
+    times = [add_hours(t0, (15 * i + 7.5) / 60) for i in range(len(to))]
     return PlanInputs(
         start=start.to_pydatetime(),
         ti0_c=float(hh.ti_mean.iloc[0]),
@@ -87,16 +89,19 @@ def run(h: pd.DataFrame, start: str, end: str, basis: str, cfg: OptimiserConfig)
     )
     rows = []
     for d in pd.date_range(start, end, freq="D", tz=ds.TZ):
-        inp = day_inputs(h, d + pd.Timedelta(hours=18), eng, cost)
+        # 18:00 local wall time (adding 18 elapsed hours to midnight is 19:00 on the spring DST day)
+        start = pd.Timestamp(f"{d.date()} 18:00").tz_localize(ds.TZ)
+        inp = day_inputs(h, start, eng, cost)
         if inp is None:
             continue
         args = (eng.learner.params, eng.plant, eng.cop, cfg)
         actual = evaluate(inp.baseline_setpoint_c, inp, *args)
         # simple timer schedule matching the comfort periods: 21.5 °C setpoint in them, 20.5 °C otherwise
-        timer = [
-            21.5 if period_value(COMFORT, ((18 + hh) % 24) * 60 + 30) is not None else 20.5
-            for hh in range(24)
-        ]
+        t0 = start.to_pydatetime()
+        timer = []
+        for hh in range(24):
+            mid = add_hours(t0, hh + 0.5)  # local time in the middle of the plan hour
+            timer.append(21.5 if period_value(COMFORT, mid.hour * 60 + mid.minute) is not None else 20.5)
         fixed = evaluate(timer, inp, *args)
         t0 = time.perf_counter()
         opt = optimise(inp, *args)

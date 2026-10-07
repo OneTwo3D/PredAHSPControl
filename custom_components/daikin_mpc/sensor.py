@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -20,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import DaikinMpcCoordinator
 from .core.engine import EngineStatus
+from .core.timeutil import add_hours
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -59,7 +59,7 @@ def _energy_attrs(s: EngineStatus) -> dict[str, Any]:
     sb_kwh_h = s.standby_w / 1000
     hourly = [
         {
-            "start": (start + timedelta(hours=k)).isoformat(),
+            "start": add_hours(start, k).isoformat(),
             "elec_kwh": round(sum(fc.elec_wh[i : i + per_hour]) / 1000 + sb_kwh_h, 3),
             "heat_kwh": round(sum(fc.heat_wh[i : i + per_hour]) / 1000, 3),
         }
@@ -82,10 +82,11 @@ def _plan_attrs(s: EngineStatus) -> dict[str, Any]:
     if r is None:
         return {"cost_source": s.cost_source}
     per_h = 4
-    start = s.time.replace(second=0, microsecond=0)
+    # times are relative to when the plan was made, not to the latest poll
+    start = (r.start or s.time).replace(second=0, microsecond=0)
     hourly = [
         {
-            "start": (start + timedelta(hours=h)).isoformat(),
+            "start": add_hours(start, h).isoformat(),
             "setpoint": sp,
             "baseline_setpoint": r.baseline.setpoints_c[h] if h < len(r.baseline.setpoints_c) else None,
             "room_c": round(r.plan.ti_c[min((h + 1) * per_h, len(r.plan.ti_c) - 1)], 2),
@@ -216,7 +217,7 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
         attrs_fn=lambda s: {
             "source": s.cop_source,
             "learned_days": s.cop_learned_days,
-            "basis": "Daikin heating heat counter / external meter (incl. standby and pump)",
+            "basis": "Daikin heat counter / (external meter − DHW − standby); standby added separately",
         },
     ),
     MpcSensorDescription(

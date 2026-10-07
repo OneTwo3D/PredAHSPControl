@@ -28,6 +28,7 @@ def snap(t, **vals):
         Role.ROOM_SET: 21.0,
         Role.LWT_SET: 29.0,
         Role.HEATING_ENABLED: 1.0,
+        Role.HEARTBEAT: 1.0,
     }
     base.update({Role(k): v for k, v in vals.items()})
     return validate(Snapshot(t, {r: Reading(v) for r, v in base.items()}))
@@ -217,7 +218,8 @@ def test_cop_learner_learns_and_persists():
     prior = CopCurve((1.4, 4.6, 7.6, 10.2, 12.9), (2.79, 3.01, 3.28, 3.28, 3.81), (), ())
     cl = CopLearner(prior)
     for _ in range(10):
-        assert cl.update_day(5.0, 15.0, 6.0, 19.5)  # COP 2.5 at 5 °C
+        # 6 kWh running + 19.5 W standby all day; COP excludes standby -> 2.5 at 5 °C
+        assert cl.update_day(5.0, 15.0, 6.0 + 19.5 * 24 / 1000, 19.5)
     curve, learned = cl.curve()
     assert learned == 1 and curve.at(5.0)[0] == pytest.approx(2.5, abs=0.05)
     assert all(b >= a for a, b in zip(curve.cop, curve.cop[1:], strict=False))

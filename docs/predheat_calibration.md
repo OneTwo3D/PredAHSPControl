@@ -74,6 +74,35 @@ Suggested `heat_pump_efficiency` (outdoor °C → COP, normalised by its maximum
 ## Predbat interaction
 
 - `load_forecast: predheat.heat_energy$external` with `car_charging_energy: sensor.ashp_heating_power_consumption_daily` removes heating from historical load and adds the Predheat forecast: consistent, no double counting for space heating. DHW remains in the historical base load, which is acceptable while Predheat models space heating only.
+- **Heating switched off (summer):** the automation disables Predheat, `predheat.heat_energy` disappears
+  and Predbat logs `Warn: Unable to load the load forecast from predheat.heat_energy` every cycle
+  (harmless: the source is skipped). Predbat only warns when the series is empty (`fetch.py`,
+  `load_forecast` → `minute_data`), so point it at a template sensor that passes Predheat's
+  `external` list through while Predheat is enabled and otherwise publishes a flat zero series in the
+  same format (`[{last_updated, energy}]`, cumulative kWh, `%Y-%m-%dT%H:%M:%S%z`). It also ignores the
+  stale forecast Predheat leaves behind right after it is disabled:
+
+  ```yaml
+  # configuration.yaml
+  template:
+    - sensor:
+        - name: "Heating load forecast"
+          unique_id: heating_load_forecast
+          unit_of_measurement: kWh
+          state: >
+            {{ states('predheat.heat_energy') | float(0)
+               if is_state('switch.predbat_predheat_enable', 'on') else 0 }}
+          attributes:
+            external: >
+              {% set ext = state_attr('predheat.heat_energy', 'external') %}
+              {% if is_state('switch.predbat_predheat_enable', 'on') and ext %}{{ ext }}
+              {% else %}{% set t0 = today_at('00:00') %}
+              [{"last_updated": "{{ t0.strftime('%Y-%m-%dT%H:%M:%S%z') }}", "energy": 0},
+               {"last_updated": "{{ (t0 + timedelta(days=3)).strftime('%Y-%m-%dT%H:%M:%S%z') }}", "energy": 0}]
+              {% endif %}
+  ```
+
+  and in `apps.yaml`: `load_forecast: - sensor.heating_load_forecast$external`.
 - `load_ml_enable: true`: confirm that Predbat's ML load model applies the same `car_charging_energy` filtering; otherwise space heating is counted twice (ML history + Predheat).
 
 ## Next step (M1)

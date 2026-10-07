@@ -36,16 +36,21 @@ def fit_all(h: pd.DataFrame, start: str, end: str, to_col: str) -> dict[str, obj
     d = heating_days(ds.season(ds.daily(h, to_col=to_col), start, end))
     train, test = ds.split_weeks(d.index)
 
-    full = thermal_model.fit_daily_energy_balance(d.ti, d.to, d.heat_kwh, d.dti_next)
+    full = thermal_model.fit_daily_energy_balance(d.ti, d.to, d.heat_kwh, d.dti_next, d.day_h)
     tr = thermal_model.fit_daily_energy_balance(
-        d.ti[train], d.to[train], d.heat_kwh[train], d.dti_next[train]
+        d.ti[train], d.to[train], d.heat_kwh[train], d.dti_next[train], d.day_h[train]
     )
 
     hs = ds.season(h, start, end)
     q_hour = hs["heat_w_mean"].clip(lower=0).where(hs["cls"] != IntervalClass.DHW.value)
     ok = q_hour.notna() & hs.ti_mean.notna() & hs[to_col].notna()
+    # Keep the regular hourly index (NaN where excluded): dropping rows would join hours across gaps
+    # and DHW exclusions; windows containing a NaN are rejected by the fitter.
     c_hourly, ua_hourly, g_hourly = thermal_model.fit_hourly_dynamics(
-        hs.ti_mean[ok].to_numpy(), hs[to_col][ok].to_numpy(), q_hour[ok].to_numpy(), window_h=6
+        hs.ti_mean.where(ok).to_numpy(),
+        hs[to_col].where(ok).to_numpy(),
+        q_hour.where(ok).to_numpy(),
+        window_h=6,
     )
 
     fr = hs[hs.cls == IntervalClass.HEATING_FULL.value]
@@ -60,9 +65,9 @@ def fit_all(h: pd.DataFrame, start: str, end: str, to_col: str) -> dict[str, obj
     p = tr.params
     q_pred_w = np.maximum(0.0, p.ua_w_per_k * (d.ti[test] - d.to[test]) - p.gains_w)
     cop_pred = np.array([cop_tr.at(t)[0] for t in d.to[test]])
-    e_pred = q_pred_w * 24 / 1000 / cop_pred
+    e_pred = q_pred_w * d.day_h[test] / 1000 / cop_pred
     e_err = e_pred - d.elec_kwh[test]
-    heat_err = q_pred_w * 24 / 1000 - d.heat_kwh[test]
+    heat_err = q_pred_w * d.day_h[test] / 1000 - d.heat_kwh[test]
 
     hourly_counts = hs.cls.value_counts().to_dict()
     return {

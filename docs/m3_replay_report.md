@@ -8,11 +8,11 @@ Generated 2026-10-07 by `tools/m3_replay.py`. One 24 h plan per day from 18:00, 
 
 | Schedule | Cost p/day | kWh/day | Days below 20 °C min | Mean lowest room °C | Shortfall vs 21 °C periods (K·h/day) | Starts/day |
 |---|---|---|---|---|---|---|
-| Actual (incl. night setback) | 56.7 | 4.83 | 133 | 19.13 | 4.60 | 1.0 |
-| Simple timer (21.5 °C in periods, 20.5 °C otherwise) | 55.7 | 4.86 | 51 | 20.02 | 2.00 | 0.4 |
-| Optimised | 59.8 | 5.51 | 4 | 20.60 | 0.36 | 0.1 |
+| Actual (incl. night setback) | 51.5 | 4.39 | 133 | 19.13 | 4.61 | 1.0 |
+| Simple timer (21.5 °C in periods, 20.5 °C otherwise) | 50.9 | 4.44 | 51 | 20.02 | 2.00 | 0.4 |
+| Optimised | 55.1 | 5.07 | 4 | 20.62 | 0.35 | 0.1 |
 
-Optimised vs simple timer: -4.1 p/day (-7.3 %). Mean optimised setpoint night (00–05) 21.61 °C, day (08–16) 20.93 °C. Runtime median 0.22 s, max 0.35 s.
+Optimised vs simple timer: -4.2 p/day (-8.3 %). Mean optimised setpoint night (00–05) 21.62 °C, day (08–16) 21.00 °C. Runtime median 0.21 s, max 0.31 s.
 
 ## Raw import tariff
 
@@ -20,11 +20,11 @@ Optimised vs simple timer: -4.1 p/day (-7.3 %). Mean optimised setpoint night (0
 
 | Schedule | Cost p/day | kWh/day | Days below 20 °C min | Mean lowest room °C | Shortfall vs 21 °C periods (K·h/day) | Starts/day |
 |---|---|---|---|---|---|---|
-| Actual (incl. night setback) | 160.7 | 4.83 | 133 | 19.13 | 4.60 | 1.0 |
-| Simple timer (21.5 °C in periods, 20.5 °C otherwise) | 153.5 | 4.86 | 51 | 20.02 | 2.00 | 0.4 |
-| Optimised | 123.0 | 4.88 | 4 | 20.15 | 0.58 | 0.8 |
+| Actual (incl. night setback) | 145.7 | 4.39 | 133 | 19.13 | 4.61 | 1.0 |
+| Simple timer (21.5 °C in periods, 20.5 °C otherwise) | 140.0 | 4.44 | 51 | 20.02 | 2.00 | 0.4 |
+| Optimised | 116.1 | 4.56 | 4 | 20.22 | 0.54 | 0.7 |
 
-Optimised vs simple timer: +30.5 p/day (+19.9 %). Mean optimised setpoint night (00–05) 21.87 °C, day (08–16) 20.50 °C. Runtime median 0.21 s, max 0.36 s.
+Optimised vs simple timer: +23.9 p/day (+17.1 %). Mean optimised setpoint night (00–05) 21.87 °C, day (08–16) 20.55 °C. Runtime median 0.20 s, max 0.29 s.
 
 ## Notes
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import ssl
 import urllib.parse
 import urllib.request
@@ -30,7 +31,30 @@ READ_ONLY_WS_TYPES = frozenset(
         "history/history_during_period",
     }
 )
-READ_ONLY_REST_PREFIXES = ("/api/", "/api/states", "/api/config", "/api/history/period")
+# Exact read-only REST endpoints. A prefix such as "/api/" would also admit GET webhooks
+# (/api/webhook/<id>), which can trigger automations.
+READ_ONLY_REST_PATTERNS = tuple(
+    re.compile(p)
+    for p in (
+        r"/api/",
+        r"/api/config",
+        r"/api/states",
+        r"/api/states/[a-z_]+\.[a-z0-9_]+",
+        r"/api/history/period(/[0-9T:.+\-Z]+)?",
+        r"/api/config/automation/config/[A-Za-z0-9_]+",
+    )
+)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: urllib would resend the Authorization header to the new location."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        raise PermissionError(f"redirect to {newurl} refused (would forward the token)")
+
+
+def _path_allowed(path: str) -> bool:
+    return any(p.fullmatch(path) for p in READ_ONLY_REST_PATTERNS)
 
 
 def _token() -> str:
@@ -52,13 +76,16 @@ def _base_url() -> str:
 
 def rest_get(path: str, params: dict[str, str] | None = None, timeout_s: float = 120) -> Any:
     """GET a read-only REST endpoint and return decoded JSON."""
-    if not path.startswith(READ_ONLY_REST_PREFIXES):
+    if not _path_allowed(path):
         raise PermissionError(f"REST path not allowed: {path}")
     url = _base_url() + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {_token()}"}, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout_s, context=ssl.create_default_context()) as resp:
+    opener = urllib.request.build_opener(
+        _NoRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context())
+    )
+    with opener.open(req, timeout=timeout_s) as resp:
         return json.loads(resp.read())
 
 

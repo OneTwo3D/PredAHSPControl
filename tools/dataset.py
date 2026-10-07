@@ -35,7 +35,9 @@ def load_hourly(csv_path: str | Path) -> pd.DataFrame:
             if col in h:
                 h.loc[h[col] <= INVALID_TEMPERATURE_BELOW_C, col] = np.nan
     for c in COUNTERS:
-        src = f"{c}_state" if f"{c}_state" in h else f"{c}_sum"
+        # Prefer the statistics ``sum`` (HA adjusts it for meter resets); ``state`` drops the energy
+        # counted after a reset.
+        src = f"{c}_sum" if f"{c}_sum" in h else f"{c}_state"
         if src in h:
             h[f"d_{c}"] = h[src].diff().clip(lower=0)
     for c in HOUR_METERS:
@@ -69,6 +71,7 @@ def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
             "room_set": g["room_set_mean"].mean(),
             "lwt_set": g["lwt_set_mean"].mean(),
             "hours": g["ti_mean"].count(),
+            "day_h": g.size().astype(float),  # 23/25 on daylight-saving change days
         }
     )
     for c in (*COUNTERS, *HOUR_METERS):

@@ -64,14 +64,19 @@ class BuildingLearner:
     def sd(self) -> dict[str, float]:
         return {n: float(math.sqrt(max(v, 0.0))) for n, v in zip(self.NAMES, np.diag(self.p), strict=True)}
 
-    def update_day(self, ti: float, to: float, heat_kwh: float, dti_next: float) -> UpdateResult:
-        """Update with one complete day. Returns whether it was accepted and why not."""
-        if not all(math.isfinite(v) for v in (ti, to, heat_kwh, dti_next)):
+    def update_day(
+        self, ti: float, to: float, heat_kwh: float, dti_next: float, day_h: float = 24.0
+    ) -> UpdateResult:
+        """Update with one complete day of ``day_h`` hours (23/25 on daylight-saving change days).
+
+        Returns whether it was accepted and why not.
+        """
+        if not all(math.isfinite(v) for v in (ti, to, heat_kwh, dti_next, day_h)) or not 20 <= day_h <= 28:
             return self._reject("non-finite input")
         if heat_kwh < self.cfg.min_heat_kwh:
             return self._reject("no heating that day")
-        x = np.array([ti - to, -1.0, dti_next / 24.0])
-        y = heat_kwh * 1000.0 / 24.0
+        x = np.array([ti - to, -1.0, dti_next / day_h])
+        y = heat_kwh * 1000.0 / day_h
         lam = self.cfg.forgetting
         r = self.cfg.noise_w**2
         p_pred = self.p / lam
@@ -126,11 +131,14 @@ class BuildingLearner:
                 lo, hi = self.cfg.bounds[n]
                 if not lo <= theta[i] <= hi:
                     return False
-            if np.any(np.diag(p) < 0):
+            # a covariance must be symmetric positive semi-definite, or later updates take sqrt(<0)
+            if not np.allclose(p, p.T, rtol=1e-6, atol=1e-6) or np.linalg.eigvalsh(0.5 * (p + p.T)).min() < 0:
                 return False
-        except (KeyError, TypeError, ValueError):
+            updates, rejected = int(d.get("updates", 0)), int(d.get("rejected", 0))
+            if updates < 0 or rejected < 0:
+                return False
+        except (AttributeError, KeyError, TypeError, ValueError, np.linalg.LinAlgError):
             return False
-        self.theta, self.p = theta, p
-        self.updates = int(d.get("updates", 0))
-        self.rejected = int(d.get("rejected", 0))
+        self.theta, self.p = theta, 0.5 * (p + p.T)
+        self.updates, self.rejected = updates, rejected
         return True

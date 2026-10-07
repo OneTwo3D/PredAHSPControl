@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .intervals import IntervalClass, IntervalSummary, classify
 from .telemetry import Role, ValidatedSnapshot
+from .timeutil import day_length_h, elapsed_s, hour_key
 
 MEAN_ROLES = (
     Role.TI,
@@ -44,6 +45,7 @@ class HourRecord:
     defrost: bool
     dhw: bool
     cls: str
+    counter_gap: bool = False  # counter increments across a midnight-spanning gap were dropped
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -67,6 +69,8 @@ class DayRecord:
     heating_ext_kwh: float | None = None
     # Mean external power in hours with the compressor off all hour (standby), W.
     standby_w: float | None = None
+    # Length of the local day (23 or 25 on daylight-saving change days).
+    length_h: float = 24.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -74,7 +78,8 @@ class DayRecord:
 
 @dataclass
 class _Acc:
-    start: datetime
+    start: datetime  # local start of the hour
+    key: datetime  # UTC start of the hour (unique across daylight-saving changes)
     covered_s: float = 0.0
     sums: dict[str, float] = field(default_factory=dict)
     weights: dict[str, float] = field(default_factory=dict)
@@ -84,6 +89,11 @@ class _Acc:
     deltas: dict[str, float] = field(default_factory=dict)
     defrost: bool = False
     dhw: bool = False
+    counter_gap: bool = False
+
+
+def _local_date(t: datetime, ref: datetime) -> date:
+    return (t.astimezone(ref.tzinfo) if ref.tzinfo is not None and t.tzinfo is not None else t).date()
 
 
 class HourAccumulator:
@@ -93,25 +103,25 @@ class HourAccumulator:
         self._acc: _Acc | None = None
         self._last_time: datetime | None = None
         self._last_counter: dict[str, float] = {}
-
-    @staticmethod
-    def _hour(t: datetime) -> datetime:
-        return t.replace(minute=0, second=0, microsecond=0)
+        # When the counter baselines were last updated (persisted with them); increments spanning a
+        # longer gap (HA restart, bridge outage) cannot be placed in time and are not counted.
+        self.counter_time: dict[str, datetime] = {}
 
     def add(self, s: ValidatedSnapshot) -> list[HourRecord]:
         done: list[HourRecord] = []
-        hour = self._hour(s.time)
-        if self._acc is not None and hour != self._acc.start:
+        key = hour_key(s.time)
+        if self._acc is not None and key != self._acc.key:
             done.append(self._finish(self._acc))
             self._acc = None
         if self._acc is None:
-            self._acc = _Acc(start=hour)
+            local = key.astimezone(s.time.tzinfo) if s.time.tzinfo is not None else key
+            self._acc = _Acc(start=local, key=key)
         a = self._acc
         dt = 0.0
         if self._last_time is not None:
-            dt = (s.time - self._last_time).total_seconds()
+            dt = elapsed_s(self._last_time, s.time)
             dt = dt if 0 < dt <= MAX_GAP_S else 0.0
-            dt = min(dt, (s.time - a.start).total_seconds())  # only time inside this hour
+            dt = min(dt, elapsed_s(a.key, s.time))  # only time inside this hour
         self._last_time = s.time
         if s.complete and dt > 0:
             a.covered_s += dt
@@ -134,8 +144,16 @@ class HourAccumulator:
                 continue
             k = role.value
             prev = self._last_counter.get(k)
+            seen = self.counter_time.get(k)
+            gap = seen is None or not 0 <= elapsed_s(seen, s.time) <= MAX_GAP_S
+            # After a gap (HA restart, bridge outage) the increment cannot be placed in time. Within
+            # one local day it is kept, so daily totals stay right; across midnight it is dropped and
+            # the day is marked so it is not used for learning.
+            same_day = seen is not None and _local_date(seen, s.time) == s.time.date()
             inc = 0.0
-            if prev is not None:
+            if prev is not None and gap and not same_day:
+                a.counter_gap = True
+            elif prev is not None:
                 if v >= prev:
                     inc = v - prev
                 elif v < prev - RESET_THRESHOLD_KWH:
@@ -143,6 +161,7 @@ class HourAccumulator:
                 else:
                     v = prev  # small decrease: noise, keep the higher value
             self._last_counter[k] = v
+            self.counter_time[k] = s.time
             a.deltas[k] = a.deltas.get(k, 0.0) + inc
         return done
 
@@ -179,6 +198,7 @@ class HourAccumulator:
             a.defrost,
             a.dhw,
             cls.value,
+            a.counter_gap,
         )
 
 
@@ -189,6 +209,7 @@ class DayAggregator:
 
     def __init__(self) -> None:
         self._day: str | None = None
+        self._tz: object = None
         self._hours: list[HourRecord] = []
 
     def add(self, h: HourRecord) -> DayRecord | None:
@@ -198,12 +219,16 @@ class DayAggregator:
             out = self._finish()
             self._hours = []
         self._day = day
+        self._tz = h.start.tzinfo
         self._hours.append(h)
         return out
 
     def _finish(self) -> DayRecord | None:
         hs = [h for h in self._hours if h.coverage >= 0.75 and h.cls != IntervalClass.INVALID.value]
-        if len(hs) < self.MIN_HOURS or self._day is None:
+        if self._day is None or any(h.counter_gap for h in self._hours):
+            return None
+        length_h = day_length_h(date.fromisoformat(self._day), self._tz)
+        if len(hs) < self.MIN_HOURS + (length_h - 24):  # same allowance for missing hours on 23/25 h days
             return None
         ti = [h.means["ti"] for h in hs if "ti" in h.means]
         to = [h.means["to"] for h in hs if "to" in h.means]
@@ -230,6 +255,7 @@ class DayAggregator:
             ext_kwh=ext,
             heating_ext_kwh=heating_ext,
             standby_w=standby,
+            length_h=length_h,
         )
 
 

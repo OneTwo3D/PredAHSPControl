@@ -48,6 +48,9 @@ REQUIRED_ROLES: tuple[Role, ...] = (
     Role.HZ,
     Role.HEAT_KWH,
     Role.ELEC_KWH,
+    # P1P2MQTT publishes on change only, so without a heartbeat a frozen bridge is indistinguishable
+    # from an idle heat pump; the heartbeat is therefore required.
+    Role.HEARTBEAT,
 )
 BINARY_ROLES: frozenset[Role] = frozenset(
     {Role.DEFROST, Role.DHW_ACTIVE, Role.HEATING_ENABLED, Role.HEATING_DEMAND}
@@ -94,6 +97,7 @@ class Reading:
 
     value: float | None
     age_s: float = 0.0
+    issue: str | None = None  # why the value is missing (e.g. unsupported unit); None = unavailable
 
 
 @dataclass(frozen=True)
@@ -110,7 +114,10 @@ class ValidatedSnapshot:
 
     @property
     def complete(self) -> bool:
-        return all(r in self.values for r in REQUIRED_ROLES) and Role.HEARTBEAT not in self.issues
+        return (
+            all(r in self.values for r in REQUIRED_ROLES if r is not Role.HEARTBEAT)
+            and Role.HEARTBEAT not in self.issues
+        )
 
     def get(self, role: Role) -> float | None:
         return self.values.get(role)
@@ -131,7 +138,7 @@ def validate(s: Snapshot, max_age_s: dict[Role, float] | None = None) -> Validat
                 issues[role] = f"bridge heartbeat stale ({rd.age_s / 60:.0f} min)"
             continue
         if v is None or not math.isfinite(v):
-            issues[role] = "unavailable"
+            issues[role] = rd.issue or "unavailable"
             continue
         if rd.age_s > ages.get(role, FALLBACK_MAX_AGE_S):
             issues[role] = f"stale ({rd.age_s / 60:.0f} min)"

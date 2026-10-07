@@ -85,17 +85,18 @@ def fit_daily_energy_balance(
     to_mean_c: FloatArray,
     heat_kwh: FloatArray,
     dti_next_k: FloatArray,
+    day_h: FloatArray | None = None,
 ) -> ThermalFit:
     """Fit UA, gains and C from daily energy balance.
 
-    Per day: ``Q_mean = UA·(Ti − To) − G + C·ΔTi/24`` with ``Q_mean`` the mean heat input in W and
+    Per day: ``Q_mean = UA·(Ti − To) − G + C·ΔTi/hours`` with ``Q_mean`` the mean heat input in W and
     ``ΔTi`` the change in daily mean indoor temperature to the next day (K). Inputs must already be
-    filtered to valid heating days (no missing counters, DHW heat excluded).
+    filtered to valid heating days (no missing counters, DHW heat excluded). ``day_h`` is each day's
+    length in hours (23/25 on daylight-saving change days; default 24).
     """
-    q_w = np.asarray(heat_kwh, float) * 1000.0 / 24.0
-    x = np.c_[
-        np.asarray(ti_mean_c) - np.asarray(to_mean_c), -np.ones(len(q_w)), np.asarray(dti_next_k) / 24.0
-    ]
+    hrs = np.full(len(heat_kwh), 24.0) if day_h is None else np.asarray(day_h, float)
+    q_w = np.asarray(heat_kwh, float) * 1000.0 / hrs
+    x = np.c_[np.asarray(ti_mean_c) - np.asarray(to_mean_c), -np.ones(len(q_w)), np.asarray(dti_next_k) / hrs]
     r = ols(x, q_w)
     ua, g, c = (float(v) for v in r.coef)
     if c <= 0:
@@ -129,9 +130,12 @@ def fit_hourly_dynamics(
     if n <= 3:
         raise ValueError("not enough samples")
     dti = (ti[window_h:] - ti[:-window_h]) / window_h
+    # a window containing any missing hour gives NaN here and is rejected below
     q_win = np.convolve(q, np.ones(window_h) / window_h, mode="valid")[:n]
+    ti_ok = np.isfinite(ti)
+    whole = np.convolve(ti_ok.astype(float), np.ones(window_h + 1), mode="valid")[:n] == window_h + 1
     x = np.c_[q_win, -(ti[:n] - to[:n]), np.ones(n)]
-    ok = np.isfinite(x).all(axis=1) & np.isfinite(dti)
+    ok = np.isfinite(x).all(axis=1) & np.isfinite(dti) & whole
     r = ols(x[ok], dti[ok])
     a, b, g = (float(v) for v in r.coef)
     c = 1.0 / a
