@@ -5,6 +5,24 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.2] - 2026-10-07
+
+Third review round (Codex, 5 findings on 0.4.1), see `docs/review_2026-10.md`.
+
+### Fixed
+- A bridge outage that spans midnight no longer lets the earlier day into learning before the outage is
+  resolved: a day is closed only if the meter counters were readable at the boundary.
+- Battery-aware price: the charging cost now comes from Predbat's rates when available (the fallback
+  tariff's cheap rate was used even when Predbat's cheapest rate was higher).
+- Re-mapping a meter entity no longer books the difference between two meters as energy: counter
+  baselines are stored with their entity and dropped when the mapping changes. (After this update the
+  baselines restart once; the current day is not used for learning.)
+- Stored COP bins with heat but no electricity are rejected.
+
+### Tools
+- Offline daily energy requires a valid counter reading at both day boundaries (series starting or
+  ending mid-day no longer yield partial totals).
+
 ## [0.4.1] - 2026-10-07
 
 Second review round (Codex, 10 findings on 0.4.0), see `docs/review_2026-10.md`.

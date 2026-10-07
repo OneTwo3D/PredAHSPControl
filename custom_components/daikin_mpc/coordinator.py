@@ -51,7 +51,7 @@ from .core.cost_model import (
 )
 from .core.engine import EngineConfig, EngineStatus, ShadowEngine
 from .core.optimiser import OptimiserConfig, Recommendation
-from .core.telemetry import BINARY_ROLES, Reading, Role, Snapshot, validate
+from .core.telemetry import BINARY_ROLES, COUNTER_ROLES, Reading, Role, Snapshot, validate
 from .core.timeutil import elapsed_s
 from .core.units import temperature_c, to_core_unit
 
@@ -99,12 +99,33 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
     async def _async_setup(self) -> None:
         stored = await self._store.async_load()
         if stored:
+            stored = self._drop_remapped_counters(dict(stored))
             self.load_warnings = self.engine.load_dict(stored)
             for w in self.load_warnings:
                 _LOGGER.warning("Daikin MPC state: %s", w)
 
+    def _state(self) -> dict[str, Any]:
+        """Engine state plus the entity behind each counter, to detect remapping on the next load."""
+        return {**self.engine.to_dict(), "counter_entities": self._counter_entities()}
+
+    def _counter_entities(self) -> dict[str, str]:
+        return {r.value: self.mapping[r.value] for r in COUNTER_ROLES if self.mapping.get(r.value)}
+
+    def _drop_remapped_counters(self, stored: dict[str, Any]) -> dict[str, Any]:
+        """Forget counter baselines whose role now points to another entity (or whose entity is unknown):
+        comparing two different meters would book their difference as energy."""
+        old = stored.get("counter_entities")
+        old = old if isinstance(old, dict) else {}
+        now = self._counter_entities()
+        keep = {k for k, e in now.items() if old.get(k) == e}
+        for key in ("last_counters", "counter_time"):
+            v = stored.get(key)
+            if isinstance(v, dict):
+                stored[key] = {k: x for k, x in v.items() if k in keep}
+        return stored
+
     async def async_save_now(self) -> None:
-        await self._store.async_save(self.engine.to_dict())
+        await self._store.async_save(self._state())
 
     # ------------------------------------------------------------------------------------------
     def _reading(self, entity_id: str | None, role: Role | None) -> Reading | None:
@@ -196,7 +217,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         await self._async_optimise(now, snap, status.telemetry_ok)
         status.recommendation = self.recommendation
         status.cost_source = self.cost_source
-        self._store.async_delay_save(self.engine.to_dict, SAVE_DELAY_S)
+        self._store.async_delay_save(self._state, SAVE_DELAY_S)
         return status
 
     def _cost_provider(self) -> CostProvider:

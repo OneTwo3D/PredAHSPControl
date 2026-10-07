@@ -122,6 +122,8 @@ class CopLearner:
                 # each populated bin must give a plausible COP and a mean outdoor temperature in range
                 if e > 0 and not (1.0 <= h / e <= 7.0 and -40.0 <= t / e <= 50.0):
                     return False
+                if e == 0 and (h != 0 or t != 0):  # orphan heat/temperature without electricity
+                    return False
             sb_raw = d.get("standby_w")
             sb = float(sb_raw) if sb_raw is not None else None
             if sb is not None and not (math.isfinite(sb) and 0 <= sb <= 200):

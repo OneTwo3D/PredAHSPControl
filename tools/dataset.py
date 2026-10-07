@@ -78,6 +78,7 @@ def _increments(h: pd.DataFrame, src: str, key: str) -> None:
     h[f"dd_{key}"] = inc.reindex(h.index)
     crosses = (~one_h) & prev_t.notna() & (prev_t.dt.date != v.index.to_series().dt.date)
     h[f"gapx_{key}"] = crosses.reindex(h.index, fill_value=False).astype(bool)
+    h[f"cv_{key}"] = h[src].notna()  # a valid cumulative reading at the end of this hour
     # the earlier date's total is incomplete too
     src_days = set(prev_t[crosses].dt.date)
     if src_days:
@@ -102,7 +103,12 @@ def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
             # complete accounting: every increment of the day included (same-day gaps are booked to the
             # next reading); days touched by a gap across midnight are dropped
             total = g[f"dd_{c}"].sum(min_count=1)
-            d[c] = total.where(~g[f"gapx_{c}"].any())
+            # both day boundaries must be anchored: a reading for the first hour with a valid baseline
+            # before it (dd present), and a reading at the end of the last hour; otherwise energy at the
+            # start or end of the day (e.g. before the counter series begins) is missing
+            start_ok = g[f"dd_{c}"].apply(lambda x: bool(len(x)) and pd.notna(x.iloc[0]))
+            end_ok = g[f"cv_{c}"].apply(lambda x: bool(len(x)) and bool(x.iloc[-1]))
+            d[c] = total.where(~g[f"gapx_{c}"].any() & start_ok & end_ok)
     d["dti_next"] = d["ti"].shift(-1) - d["ti"]
     d["dhw_hours"] = g["cls"].apply(lambda s: int((s == IntervalClass.DHW.value).sum()))
     return d

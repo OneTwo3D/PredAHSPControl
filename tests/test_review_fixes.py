@@ -380,3 +380,65 @@ def test_feasibility_and_reported_range_agree():
     )
     r = evaluate([21.0], inp, B, P, lambda _: 3.0, OptimiserConfig(horizon_h=1))
     assert r.feasible == (r.min_ti_c >= 20.0 and r.max_ti_c <= 22.0)
+
+
+# --- round 3 ----------------------------------------------------------------------------
+def test_stale_bridge_across_midnight_drops_the_source_day_before_recovery():
+    acc, days = HourAccumulator(), DayAggregator()
+    t = datetime(2026, 11, 1, 0, 0, tzinfo=UTC)
+    stale_from, stale_to = datetime(2026, 11, 1, 23, 30, tzinfo=UTC), datetime(2026, 11, 2, 1, 30, tzinfo=UTC)
+    recs = []
+    heat = 100.0
+    for i in range(12 * 50):
+        ti = t + timedelta(minutes=5 * i)
+        stale = stale_from <= ti < stale_to
+        if not stale:
+            heat += 1 / 12
+        s = snap(ti, heat_kwh=heat)
+        if stale:
+            s = validate(
+                Snapshot(
+                    ti, {**{r: Reading(v) for r, v in s.values.items()}, Role.HEARTBEAT: Reading(1.0, 3600)}
+                )
+            )
+        for h in acc.add(s):
+            r = days.add(h)
+            if r:
+                recs.append(r.day)
+    assert "2026-11-01" not in recs and "2026-11-02" not in recs
+
+
+def test_battery_storage_cost_uses_predbat_rates_when_present():
+    from custom_components.daikin_mpc.core.cost_model import CostProvider, parse_tariff
+
+    t0 = datetime(2026, 1, 15, 0, 0, tzinfo=UTC)
+    series = [(t0 + timedelta(hours=h), 15.0 if h % 24 < 5 else 40.0) for h in range(48)]
+    cost = CostProvider(parse_tariff("00:00-05:00=7.6, 05:00-24:00=35"), None, "battery", 0.9, series)
+    assert cost.marginal_rate(t0 + timedelta(hours=12)) == pytest.approx(15.0 / 0.9)
+
+
+def test_orphan_cop_bin_rejected():
+    from custom_components.daikin_mpc.core.cop_learner import CopLearner
+
+    eng = ShadowEngine(EngineConfig())
+    d = eng.cop_learner.to_dict()
+    d["heat"][3] = 100.0
+    assert not CopLearner(eng.cop_prior).load_dict(d)
+
+
+def test_offline_daily_totals_need_anchored_boundaries():
+    import dataset as ds
+    import pandas as pd
+
+    idx = pd.date_range("2026-01-10", periods=72, freq="h", tz=ds.TZ)
+    base = {"ti_mean": 20.0, "to_mean": 5.0, "room_set_mean": 21.0, "lwt_set_mean": 30.0, "cls": "off"}
+
+    def totals(mask):
+        h = pd.DataFrame({"heat_kwh_sum": np.arange(72, dtype=float), **base}, index=idx)
+        h["heat_kwh_sum"] = h.heat_kwh_sum.where(mask)
+        ds._increments(h, "heat_kwh_sum", "heat_kwh")
+        return ds.daily(h)["heat_kwh"].tolist()
+
+    assert totals(idx != idx[30])[1] == 24.0  # same-day gap recovered
+    assert np.isnan(totals(idx >= idx[36])[1])  # series starts mid-day
+    assert np.isnan(totals(idx < idx[60])[2])  # series ends mid-day

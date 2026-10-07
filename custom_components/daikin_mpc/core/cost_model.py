@@ -146,10 +146,11 @@ class CostProvider:
 
     @property
     def cheapest_rate(self) -> float:
-        rates = [p.rate_p for p in self.tariff]
+        """Cheapest import rate for charging: Predbat's rates when present (they cover the planning
+        horizon), the fixed tariff only without them."""
         if self.series:
-            rates += [r for _, r in self.series]
-        return min(rates)
+            return min(r for _, r in self.series)
+        return min(p.rate_p for p in self.tariff)
 
     def marginal_rate(self, t: datetime) -> float:
         raw = self.tariff_rate(t)

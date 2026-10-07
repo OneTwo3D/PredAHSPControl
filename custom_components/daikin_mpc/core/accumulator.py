@@ -46,6 +46,7 @@ class HourRecord:
     dhw: bool
     cls: str
     counter_gap: bool = False  # counter increments across a midnight-spanning gap were dropped
+    counter_stale: bool = False  # counters not readable (bridge heartbeat stale) during this hour
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -90,6 +91,7 @@ class _Acc:
     defrost: bool = False
     dhw: bool = False
     counter_gap: bool = False
+    counter_stale: bool = False
 
 
 def _local_date(t: datetime, ref: datetime) -> date:
@@ -141,6 +143,7 @@ class HourAccumulator:
         # Counters only from a live bridge: with a stale heartbeat HA still holds the last values, and
         # refreshing the baselines from them would hide the outage from the gap handling below.
         live = Role.HEARTBEAT not in s.issues
+        a.counter_stale |= not live
         for role in COUNTERS if live else ():
             v = s.get(role)
             if v is None:
@@ -202,6 +205,7 @@ class HourAccumulator:
             a.dhw,
             cls.value,
             a.counter_gap,
+            a.counter_stale,
         )
 
 
@@ -219,9 +223,12 @@ class DayAggregator:
         day = h.start.date().isoformat()
         out = None
         if self._day is not None and day != self._day:
-            # a counter gap reaching into this hour started on an earlier date, so that date's total
-            # is incomplete as well
-            out = None if h.counter_gap else self._finish()
+            # The closing date's total is only known to be complete if the counters were readable at the
+            # boundary: a stale bridge at the end of the old date or the start of the new one (or a gap
+            # reaching into this hour) means energy may still be outstanding.
+            last = self._hours[-1] if self._hours else None
+            boundary_bad = h.counter_gap or h.counter_stale or (last is not None and last.counter_stale)
+            out = None if boundary_bad else self._finish()
             self._hours = []
         self._day = day
         self._tz = h.start.tzinfo
