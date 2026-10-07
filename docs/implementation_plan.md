@@ -32,6 +32,13 @@ M0 findings (see `docs/entity_mapping.md`, `docs/data_inventory.md`):
 - A second (Onecta cloud) control path exists; the MPC gateway must be the only automated writer.
 - Raw recorder retention is 60–120 days; last winter exists only as hourly LTS.
 
+Decisions (7 October 2026):
+
+- **Primary space-heating actuator: the Daikin room setpoint** (`climate.bridge0_room_room_heating`, 0.5 K steps), letting native RT modulation and the WD curve do the LWT work. The LWT deviation stays at its native value and is only a possible secondary actuator after separate commissioning. All v1 rules for the deviation (bounds, step, write budget, readback, hold) apply equally to the setpoint; commissioning band ±0.5 K around the scheduled setpoint.
+- The Onecta overnight −6 K deviation schedule (bedroom setback) is to be replaced by the HA-connected bedroom radiator thermostat, so the living-room-referenced heat pump is no longer throttled in the cheap 00:00–05:00 window. The bedroom TRV is a comfort input/constraint, not a controller actuator in V1.
+- Unit: Daikin Altherma 3 R monobloc **EDLA04E2V3** (4 kW class) for COP/capacity priors.
+- Predheat calibration suggestions: `docs/predheat_calibration.md`.
+
 Still to verify: thermostat type (Daikin Madoka/Human Comfort Interface via P1P2 vs external on/off contact), whether its setpoint is visible/writable, exact P1P2 entity names and writability, write-budget entities, energy-meter type, DHW arrangement.
 
 ## 2. Objective and non-goals
