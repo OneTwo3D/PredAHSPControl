@@ -14,7 +14,7 @@
 >
 > `hysteresis`/`hysteresis_off` stay at 1.0. The `heating_energy` fix below still applies.
 >
-> **`volume_temp` note (verified in source):** Predheat reads `volume_temp` with `get_arg("volume_temp", …)` *without* `domain="predheat"`, so a `volume_temp:` inside the `predheat:` block is ignored. It falls back to its own simulated value (`input_number.predbat_next_volume_temp`), which is adequate. No Zigbee flow sensor is needed for Predheat; the line can stay or be removed.
+> **`volume_temp` note (verified in Predheat/Predbat source):** Predheat reads `volume_temp` with `get_arg("volume_temp", …)` *without* `domain="predheat"`, and Predbat's `get_arg` then looks only at the **top level** of `pred_bat:` (or HA config), so a `volume_temp:` inside the `predheat:` block is ignored. Per the Predheat docs the sensor must measure radiator water *near the room thermostat*, not at the heat pump, so the Daikin return sensor (R4T) is **not** a suitable substitute (earlier suggestion withdrawn). Use the living-room Zigbee radiator sensor, placed at the top level of `pred_bat:`, once it is back online; until then Predheat falls back to its simulated `input_number.predbat_next_volume_temp`.
 
 ## First pass (superseded where noted)
 
@@ -69,7 +69,7 @@ Suggested `heat_pump_efficiency` (outdoor °C → COP, normalised by its maximum
 | `target_temperature` | `sensor.bridge0_room_room_heating_setpoint` | valid | keep |
 | `heating_energy` | `sensor.ashp_daily_electricity` | valid, but **includes DHW** (today 0.94 kWh = 0.12 heating + 0.82 DHW) | `sensor.ashp_heating_power_consumption_daily` (heating only, same sensor already used as `car_charging_energy` filter) |
 | `heating_active` | `binary_sensor.bridge0_unknown_climate_active_q4` | exists; meaning undocumented ("unknown") | verify against compressor/thermostat demand this winter; alternative `binary_sensor.bridge0_mode_compressor` |
-| `volume_temp` | `sensor.ashp_flow_temperature_living_room_temperature` | **unavailable since 26 Sep** (Zigbee sensor offline/battery) | fix sensor, or use `sensor.bridge0_sensors_temperature_r4t_return_water` / a template of (R1T + R4T)/2 |
+| `volume_temp` | `sensor.ashp_flow_temperature_living_room_temperature` | **unavailable since 26 Sep** (Zigbee sensor offline/battery); also ignored inside `predheat:` | fix the sensor and move the key to the top level of `pred_bat:` (see note above) |
 
 ## Predbat interaction
 
