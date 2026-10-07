@@ -58,6 +58,8 @@ jobs:
             python3 .github/scripts/changelog.py notes "$v" > notes.md
             flags=""
             [ "$v" = "$current" ] || flags="--latest=false"
-            gh release create "$tag" --target "$ref" --title "$tag" --notes-file notes.md $flags
+            git tag "$tag" "$ref"
+            git push origin "refs/tags/$tag"
+            gh release create "$tag" --verify-tag --title "$tag" --notes-file notes.md $flags
             echo "created $tag at $ref"
           done < versions.txt
