@@ -22,7 +22,7 @@ Seventh review round (Codex): 5 code defects, 4 test gaps, see `docs/review_2026
 ### Tests
 - New tests: heat-pump output cap, small meter decreases treated as noise, thermal-capacity learning,
   exact expiry of Predbat's last slot, plus regression tests for each fix. `tools/mutation_check.py`
-  now checks 29 mutations; all are caught.
+  now checks 27 mutations; all are caught.
 
 ## [0.4.5] - 2026-10-07
 
