@@ -24,8 +24,9 @@ MEAN_ROLES = (
     Role.ELEC_W,
     Role.LWT_SET,
     Role.ROOM_SET,
+    Role.EXT_W,
 )
-COUNTERS = (Role.HEAT_KWH, Role.ELEC_KWH, Role.DHW_HEAT_KWH, Role.BUH_KWH)
+COUNTERS = (Role.HEAT_KWH, Role.ELEC_KWH, Role.DHW_HEAT_KWH, Role.BUH_KWH, Role.EXT_KWH, Role.DHW_ELEC_KWH)
 # A counter decrease larger than this is a meter reset; a smaller one is noise and ignored.
 RESET_THRESHOLD_KWH = 1.0
 MAX_GAP_S = 20 * 60.0  # samples further apart than this do not contribute time
@@ -60,6 +61,12 @@ class DayRecord:
     elec_kwh: float
     dhw_hours: int
     defrost_hours: int
+    # External meter (None when not configured): whole heat pump incl. DHW and standby.
+    ext_kwh: float | None = None
+    # External meter minus Daikin DHW electricity: space heating incl. standby and pump.
+    heating_ext_kwh: float | None = None
+    # Mean external power in hours with the compressor off all hour (standby), W.
+    standby_w: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -203,6 +210,14 @@ class DayAggregator:
         # Counter deltas over all hours (energy is not lost in low-coverage hours).
         heat = sum(h.deltas_kwh.get("heat_kwh", 0.0) for h in self._hours)
         elec = sum(h.deltas_kwh.get("elec_kwh", 0.0) for h in self._hours)
+        ext = heating_ext = standby = None
+        if all("ext_kwh" in h.deltas_kwh for h in hs):
+            ext = sum(h.deltas_kwh.get("ext_kwh", 0.0) for h in self._hours)
+            if all("dhw_elec_kwh" in h.deltas_kwh for h in hs):
+                heating_ext = max(0.0, ext - sum(h.deltas_kwh.get("dhw_elec_kwh", 0.0) for h in self._hours))
+            off = [h.means["ext_w"] for h in hs if h.cls == IntervalClass.OFF.value and "ext_w" in h.means]
+            if len(off) >= 3:
+                standby = sum(off) / len(off)
         return DayRecord(
             day=self._day,
             hours=len(hs),
@@ -212,6 +227,9 @@ class DayAggregator:
             elec_kwh=elec,
             dhw_hours=sum(h.dhw for h in self._hours),
             defrost_hours=sum(h.defrost for h in self._hours),
+            ext_kwh=ext,
+            heating_ext_kwh=heating_ext,
+            standby_w=standby,
         )
 
 

@@ -181,3 +181,48 @@ def test_engine_never_exposes_commands():
     assert not [
         n for n in dir(ShadowEngine) if any(w in n.lower() for w in ("write", "command", "set_", "actuat"))
     ]
+
+
+# --- external meter / COP learner --------------------------------------------------------
+def test_day_record_splits_external_meter_and_measures_standby():
+    acc, days = HourAccumulator(), DayAggregator()
+    recs = []
+    for i in range(12 * 30):
+        t = T0 + timedelta(minutes=5 * i)
+        running = (i // 12) % 2 == 0  # alternate hours on/off
+        recs += [
+            d
+            for h in acc.add(
+                snap(
+                    t,
+                    hz=30.0 if running else 0.0,
+                    ext_w=500.0 if running else 20.0,
+                    ext_kwh=1000 + i * 0.02,
+                    dhw_elec_kwh=50 + i * 0.002,
+                    heat_kwh=100 + i * 0.05,
+                )
+            )
+            if (d := days.add(h))
+        ]
+    d = recs[0]
+    assert d.ext_kwh == pytest.approx(0.02 * 12 * 24, rel=0.02)
+    assert d.heating_ext_kwh == pytest.approx(d.ext_kwh - 0.002 * 12 * 24, rel=0.02)
+    assert d.standby_w == pytest.approx(20.0)
+
+
+def test_cop_learner_learns_and_persists():
+    from custom_components.daikin_mpc.core.cop_learner import CopLearner
+    from custom_components.daikin_mpc.core.heatpump_model import CopCurve
+
+    prior = CopCurve((1.4, 4.6, 7.6, 10.2, 12.9), (2.79, 3.01, 3.28, 3.28, 3.81), (), ())
+    cl = CopLearner(prior)
+    for _ in range(10):
+        assert cl.update_day(5.0, 15.0, 6.0, 19.5)  # COP 2.5 at 5 °C
+    curve, learned = cl.curve()
+    assert learned == 1 and curve.at(5.0)[0] == pytest.approx(2.5, abs=0.05)
+    assert all(b >= a for a, b in zip(curve.cop, curve.cop[1:], strict=False))
+    assert not cl.update_day(5.0, 15.0, 0.5, None)  # too little electricity
+    assert not cl.update_day(5.0, 60.0, 6.0, None)  # implausible COP
+    cl2 = CopLearner(prior)
+    assert cl2.load_dict(cl.to_dict()) and cl2.curve()[0] == curve
+    assert cl.standby_w is not None and 19 < cl.standby_w < 20

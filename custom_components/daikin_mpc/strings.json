@@ -25,7 +25,10 @@
           "weather": "Weather forecast entity",
           "predheat_h1": "Predheat room forecast +1 h (optional, for comparison)",
           "predheat_h8": "Predheat room forecast +8 h (optional)",
-          "heartbeat": "Bridge heartbeat (entity that changes every minute, e.g. Daikin clock)"
+          "heartbeat": "Bridge heartbeat (entity that changes every minute, e.g. Daikin clock)",
+          "ext_w": "External heat pump meter power (W, optional, recommended)",
+          "ext_kwh": "External heat pump meter energy (kWh, optional, recommended)",
+          "dhw_elec_kwh": "Daikin DHW electricity counter (kWh, splits the external meter)"
         }
       }
     },

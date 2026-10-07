@@ -30,7 +30,8 @@ model priors and a learning on/off switch.
 |---|---|
 | `sensor.daikin_mpc_status` | `ok`; attribute `issues` empty. `telemetry_incomplete` lists the problem per role. |
 | `sensor.daikin_mpc_predicted_room_temperature_1h/3h/6h` | plausible values near the room temperature |
-| `sensor.daikin_mpc_predicted_heating_electricity_24h` | 0 while space heating is switched off; attribute `hourly` has 24 entries, `source: weather` |
+| `sensor.daikin_mpc_predicted_heat_pump_electricity_24h` | space heating + standby (≈ 0.46 kWh/day while heating is off); attributes `space_heating_kwh_24h`, `standby_kwh_24h`, `hourly` (24 entries), `source: weather` |
+| `sensor.daikin_mpc_standby_power` | ≈ 19 W prior, then learned from the external meter in hours with the compressor off |
 | `sensor.daikin_mpc_heat_loss_coefficient` | 94 W/K (prior) until the first complete heating day has been learned |
 | `sensor.daikin_mpc_last_hour_class` | after the first full hour: `off`, `heating_full`, `heating_partial`, `dhw` … |
 | `sensor.daikin_mpc_prediction_error_1h` | appears after ~1 h; attributes include Predheat's 1 h error for comparison |
@@ -46,4 +47,5 @@ restarts; removing the integration discards it.
   resolution).
 - The room-setpoint schedule is learned from observation (hour-of-day profile); Onecta schedule
   changes appear with a delay.
+- COP and standby are learned from the external meter (`sensor.kwh_meter_power` / `sensor.kwh_meter_energy_import`) minus the Daikin DHW electricity counter; without those roles the prior curve is used.
 - The heating forecast is not yet published to Predbat (milestone M4).

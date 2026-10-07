@@ -39,5 +39,26 @@ with the counter (which would imply ≈ 16 kW). Until resolved:
   forecasts are **not** affected, because heat and COP come from the same counter and the ratio was validated
   directly against measured electricity (Predheat replay, `docs/predheat_replay_report.md`).
 
-Proposed independent check: DHW cycles, where the tank heat gain (volume × 4.18 kJ/kg·K × ΔT of R5T) can be
+### DHW cross-check (77 summer DHW runs, 180 L cylinder)
+
+| Quantity | Total |
+|---|---|
+| Tank heat from one sensor (180 L × rise of R5T, 42.7 → 46.2 °C) | 56 kWh |
+| P1P2 hydronic heat | 133 kWh |
+| Daikin DHW heat counter | 155 kWh |
+| External electricity (minus standby) | 55 kWh |
+
+A single tank sensor cannot see stratification (it implies COP ≈ 1, impossible), so the tank figure is not
+usable. At DHW flow/return ΔT ≈ 4.5 K the hydronic value and the counter agree within 17 %, whereas in space
+heating (ΔT ≈ 1.9 K) they differ by 63 %: consistent with a sensor offset of roughly 0.5–0.7 K that matters
+only at small ΔT, plus the counter reading ≈ 15 % high. The circulation pump stops with the compressor, so
+the offset cannot be measured directly. Best estimate for space-heating COP on the external-meter basis:
+2.5–3.5, i.e. the counter-based values should be treated as an upper bound.
+
+### Electricity split
+
+Heating electricity over the season: external meter minus Daikin DHW electricity = 764 kWh, versus the
+Daikin heating counter 803 kWh (+5 %). The integration therefore learns COP from the external meter.
+
+Originally proposed independent check: DHW cycles, where the tank heat gain (volume × 4.18 kJ/kg·K × ΔT of R5T) can be
 compared with both heat measurements. Needs the cylinder volume.

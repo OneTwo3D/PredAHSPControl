@@ -33,6 +33,9 @@ class Role(StrEnum):
     DEFROST = "defrost"  # binary
     DHW_ACTIVE = "dhw_active"  # binary
     HEATING_ENABLED = "heating_enabled"  # binary: space heating switched on
+    EXT_W = "ext_w"  # external electricity meter power (heat pump incl. DHW and standby), W
+    EXT_KWH = "ext_kwh"  # external electricity meter cumulative energy, kWh
+    DHW_ELEC_KWH = "dhw_elec_kwh"  # Daikin cumulative DHW electricity, kWh (to split the external meter)
     HEARTBEAT = "heartbeat"  # any bridge entity that changes every minute (e.g. Daikin clock)
 
 
@@ -46,7 +49,9 @@ REQUIRED_ROLES: tuple[Role, ...] = (
     Role.ELEC_KWH,
 )
 BINARY_ROLES: frozenset[Role] = frozenset({Role.DEFROST, Role.DHW_ACTIVE, Role.HEATING_ENABLED})
-COUNTER_ROLES: frozenset[Role] = frozenset({Role.HEAT_KWH, Role.ELEC_KWH, Role.DHW_HEAT_KWH, Role.BUH_KWH})
+COUNTER_ROLES: frozenset[Role] = frozenset(
+    {Role.HEAT_KWH, Role.ELEC_KWH, Role.DHW_HEAT_KWH, Role.BUH_KWH, Role.EXT_KWH, Role.DHW_ELEC_KWH}
+)
 
 # Plausible physical ranges (inclusive).
 RANGES: dict[Role, tuple[float, float]] = {
@@ -64,6 +69,9 @@ RANGES: dict[Role, tuple[float, float]] = {
     Role.ELEC_KWH: (0.0, 1e9),
     Role.DHW_HEAT_KWH: (0.0, 1e9),
     Role.BUH_KWH: (0.0, 1e9),
+    Role.EXT_W: (0.0, 15000.0),
+    Role.EXT_KWH: (0.0, 1e9),
+    Role.DHW_ELEC_KWH: (0.0, 1e9),
 }
 
 # P1P2MQTT publishes on change only, so an unchanged value (idle compressor, counters, setpoints) is

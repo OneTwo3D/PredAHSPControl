@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from .accumulator import DayAggregator, DayRecord, HourAccumulator, HourRecord
+from .cop_learner import CopLearner
 from .emitter_model import RadiatorParams
 from .heatpump_model import CopCurve
 from .learner import BuildingLearner, LearnerConfig
@@ -40,11 +41,14 @@ class EngineConfig:
     radiator_n: float = 1.3
     q_min_w: float = 680.0
     q_max_w: float = 4300.0
-    cop_centres_c: tuple[float, ...] = (1.4, 4.6, 7.6, 10.2, 12.9)
-    cop_values: tuple[float, ...] = (2.79, 3.01, 3.28, 3.28, 3.81)
+    # COP prior: Daikin heating heat counter / external meter (minus Daikin DHW electricity), so it
+    # includes standby and the circulation pump — the same basis the live COP learner uses.
+    cop_centres_c: tuple[float, ...] = (1.4, 4.7, 7.6, 10.2, 12.9)
+    cop_values: tuple[float, ...] = (2.93, 3.25, 3.38, 3.52, 3.53)
     # native weather-dependent curve: (outdoor °C, LWT °C) points, linear between, clamped outside
     wc_curve: tuple[tuple[float, float], ...] = ((-23.0, 47.0), (10.0, 25.0))
     min_lwt_c: float = 25.0
+    standby_w: float = 19.0  # external meter, compressor off (winter 2025/26)
     learning_enabled: bool = True
 
 
@@ -89,6 +93,9 @@ class EngineStatus:
     lwt_required_c: float | None
     last_day: dict[str, Any] | None = None
     heating_enabled: bool | None = None
+    standby_w: float = 0.0
+    cop_source: str = "prior"
+    cop_learned_days: int = 0
 
 
 @dataclass
@@ -110,7 +117,10 @@ class ShadowEngine:
         self.plant = PlantParams(
             RadiatorParams(c.radiator_k, c.radiator_n), c.q_min_w, c.q_max_w, min_lwt_c=c.min_lwt_c
         )
-        self.cop_curve = CopCurve(tuple(c.cop_centres_c), tuple(c.cop_values), (), ())
+        self.cop_prior = CopCurve(tuple(c.cop_centres_c), tuple(c.cop_values), (), ())
+        self.cop_learner = CopLearner(self.cop_prior)
+        self.cop_curve = self.cop_prior
+        self._cop_bins_learned = 0
         self.hours = HourAccumulator()
         self.days = DayAggregator()
         self.pending_day: DayRecord | None = None
@@ -248,13 +258,29 @@ class ShadowEngine:
             lwt_required_c=lwt_req,
             last_day=self.last_day.to_dict() if self.last_day else None,
             heating_enabled=bool(heating_enabled) if heating_enabled is not None else None,
+            standby_w=self.standby_w,
+            cop_source=f"learned ({self._cop_bins_learned} bins)" if self._cop_bins_learned else "prior",
+            cop_learned_days=self.cop_learner.days,
         )
+
+    @property
+    def standby_w(self) -> float:
+        sb = self.cop_learner.standby_w
+        return sb if sb is not None else self.cfg.standby_w
 
     def _on_day(self, day: DayRecord) -> None:
         # The energy balance needs the next day's mean temperature (ΔTi), so update one day late.
         prev, self.pending_day, self.last_day = self.pending_day, day, day
-        if prev is not None and self.cfg.learning_enabled:
+        if not self.cfg.learning_enabled:
+            return
+        if prev is not None:
             self.learner.update_day(prev.ti, prev.to, prev.heat_kwh, day.ti - prev.ti)
+        if day.heating_ext_kwh is not None and self.cop_learner.update_day(
+            day.to, day.heat_kwh, day.heating_ext_kwh, day.standby_w
+        ):
+            self.cop_curve, self._cop_bins_learned = self.cop_learner.curve()
+        elif day.standby_w is not None:
+            self.cop_learner.update_day(day.to, 0.0, 0.0, day.standby_w)  # standby only
 
     def _setpoint_at(self, when: datetime, current: float | None) -> float:
         v = self.setpoint_profile.get(when.hour)
@@ -288,6 +314,7 @@ class ShadowEngine:
             "lwt_offset_k": self.lwt_offset_k,
             "pending_day": self.pending_day.to_dict() if self.pending_day else None,
             "last_counters": dict(self.hours._last_counter),
+            "cop_learner": self.cop_learner.to_dict(),
         }
 
     def load_dict(self, d: dict[str, Any]) -> list[str]:
@@ -314,4 +341,9 @@ class ShadowEngine:
             }
         except (TypeError, ValueError, KeyError) as e:
             warn.append(f"partial state ignored: {e}")
+        if "cop_learner" in d:
+            if self.cop_learner.load_dict(d["cop_learner"]):
+                self.cop_curve, self._cop_bins_learned = self.cop_learner.curve()
+            else:
+                warn.append("COP learner state invalid; using prior curve")
         return warn

@@ -56,16 +56,31 @@ def _energy_attrs(s: EngineStatus) -> dict[str, Any]:
     fc = s.forecast
     per_hour = round(1 / fc.step_h)
     start = s.time.replace(second=0, microsecond=0)
+    sb_kwh_h = s.standby_w / 1000
     hourly = [
         {
             "start": (start + timedelta(hours=k)).isoformat(),
-            "elec_kwh": round(sum(fc.elec_wh[i : i + per_hour]) / 1000, 3),
+            "elec_kwh": round(sum(fc.elec_wh[i : i + per_hour]) / 1000 + sb_kwh_h, 3),
             "heat_kwh": round(sum(fc.heat_wh[i : i + per_hour]) / 1000, 3),
         }
         for k, i in enumerate(range(0, len(fc.elec_wh), per_hour))
     ]
-    heat, _ = fc.energy_kwh(24)
-    return {"heat_kwh_24h": round(heat, 2), "source": s.forecast_source, "hourly": hourly}
+    heat, elec = fc.energy_kwh(24)
+    return {
+        "heat_kwh_24h": round(heat, 2),
+        "space_heating_kwh_24h": round(elec, 3),
+        "standby_w": round(s.standby_w, 1),
+        "standby_kwh_24h": round(sb_kwh_h * 24, 3),
+        "cop_source": s.cop_source,
+        "source": s.forecast_source,
+        "hourly": hourly,
+    }
+
+
+def _total_elec(s: EngineStatus) -> float | None:
+    if not s.forecast:
+        return None
+    return round(s.forecast.energy_kwh(24)[1] + s.standby_w * 24 / 1000, 3)
 
 
 SENSORS: tuple[MpcSensorDescription, ...] = (
@@ -89,12 +104,12 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
     ),
     MpcSensorDescription(
         key="energy_24h",
-        name="Predicted heating electricity 24h",
+        name="Predicted heat pump electricity 24h",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda s: round(s.forecast.energy_kwh(24)[1], 3) if s.forecast else None,
+        value_fn=_total_elec,
         attrs_fn=_energy_attrs,
     ),
     MpcSensorDescription(
@@ -130,7 +145,21 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
         value_fn=lambda s: round(s.cop_now, 2) if s.cop_now is not None else None,
-        attrs_fn=lambda s: {"provenance": "offline fit winter 2025/26, by outdoor temperature"},
+        attrs_fn=lambda s: {
+            "source": s.cop_source,
+            "learned_days": s.cop_learned_days,
+            "basis": "Daikin heating heat counter / external meter (incl. standby and pump)",
+        },
+    ),
+    MpcSensorDescription(
+        key="standby_power",
+        name="Standby power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0,
+        value_fn=lambda s: round(s.standby_w, 1),
     ),
     MpcSensorDescription(
         key="required_flow_temperature",

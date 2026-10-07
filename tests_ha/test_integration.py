@@ -32,6 +32,9 @@ STATES = {
     "binary_sensor.bridge0_dhw_dhw": "off",
     "switch.bridge0_mode_altherma_on": "on",
     "sensor.bridge0_mode_date_time_daikin": "We 2026-10-07 09:46",
+    "sensor.kwh_meter_power": "420",
+    "sensor.kwh_meter_energy_import": "3909.6",
+    "sensor.bridge0_meters_electricity_consumed_compressor_dhw": "1252",
     "weather.forecast_home": "cloudy",
     "predheat.internal_temp_h1": "20.3",
     "predheat.internal_temp_h8": "20.0",
@@ -110,9 +113,12 @@ async def test_setup_creates_sensors_and_only_reads(hass: HomeAssistant, weather
     assert t1 is not None and 15 < float(t1.state) < 25
     ua = hass.states.get("sensor.daikin_mpc_heat_loss_coefficient")
     assert ua is not None and float(ua.state) == pytest.approx(94.0)
-    e = hass.states.get("sensor.daikin_mpc_predicted_heating_electricity_24h")
+    e = hass.states.get("sensor.daikin_mpc_predicted_heat_pump_electricity_24h")
     assert e is not None and float(e.state) >= 0 and e.attributes["source"] == "weather"
     assert len(e.attributes["hourly"]) == 24
+    assert e.attributes["standby_w"] == pytest.approx(19.0)
+    assert float(e.state) >= 0.019 * 24 - 1e-6  # includes standby
+    assert hass.states.get("sensor.daikin_mpc_standby_power") is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
 
