@@ -14,8 +14,10 @@ Two bases:
 
       marginal = min(import, max(cheapest_import / efficiency, export))
 
-  This is a simple stand-in until M4 uses Predbat's plan; it is wrong on days when the battery runs out
-  (then the import rate applies).
+  Assumption (confirmed by the owner for the reference installation): the heat pump can always run
+  from the battery, or directly from the grid in the cheap night slots, i.e. battery capacity and
+  power never limit it. On a day when the battery does run out the import rate would apply; M4 can
+  refine this with Predbat's plan.
 
 Rates come from Predbat (``predbat.rates`` / ``predbat.rates_export`` ``results`` attributes: change
 points, each holding until the next, including events such as Axle/saving sessions); a fixed tariff is
