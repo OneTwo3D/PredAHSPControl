@@ -12,6 +12,12 @@ electricity. It contains no code that writes to the heat pump.
   [`docs/predheat_replay_report.md`](docs/predheat_replay_report.md),
   [`docs/predheat_calibration.md`](docs/predheat_calibration.md)
 
+## Releases
+
+Bump `version` in `custom_components/daikin_mpc/manifest.json` and add a matching section to
+[`CHANGELOG.md`](CHANGELOG.md). After CI passes on the default branch, the `release` job creates tag
+`vX.Y.Z` and a GitHub release with those notes; HACS then offers the update.
+
 ## Development
 
 ```bash

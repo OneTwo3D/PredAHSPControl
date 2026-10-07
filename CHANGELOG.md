@@ -1,0 +1,33 @@
+# Changelog
+
+Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z` (created automatically by
+`.github/workflows/ci.yml` after tests pass). Bump `custom_components/daikin_mpc/manifest.json`
+`version` and add a section here for every release. An optional `<!-- ref: <commit> -->` line pins
+the release to an earlier commit (used to back-fill old versions).
+
+## [0.2.1] - 2026-10-07
+
+### Added
+- Optional external heat-pump meter roles (`ext_w`, `ext_kwh`) and the Daikin DHW electricity counter
+  (`dhw_elec_kwh`), pre-filled in the setup form.
+- Live COP-by-outdoor-temperature learner on the external-meter basis (includes standby and pump),
+  monotone, with forgetting and fallback to the prior curve.
+- Standby power learned from compressor-off hours; new `sensor.daikin_mpc_standby_power`.
+
+### Changed
+- `sensor.daikin_mpc_predicted_heat_pump_electricity_24h` (renamed) now includes standby; attributes
+  `space_heating_kwh_24h`, `standby_kwh_24h`, `cop_source`.
+- COP prior recomputed from winter 2025/26 with the external meter (2.93 at 1 °C … 3.53 at 13 °C).
+
+### Upgrade note
+Remove and re-add the integration so the new optional entities appear in the setup form.
+
+## [0.2.0] - 2026-10-07
+<!-- ref: 8e1656bf9a0effa5113982cc7b82bc524469625f -->
+
+### Added
+- First Home Assistant release (shadow mode, observation only, no writes to the heat pump).
+- Config/options flow with verified, pre-filled entity mapping; 5-minute coordinator; bridge heartbeat.
+- Hour/day aggregation, bounded daily learner for heat loss, gains and thermal capacity.
+- 24 h room-temperature and heating-electricity forecast (thermostat gating, RT modulation, 25 °C LWT floor).
+- Self-scoring of 1/3/6 h forecasts, including Predheat comparison; persistence; diagnostics.
