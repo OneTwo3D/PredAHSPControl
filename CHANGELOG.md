@@ -5,6 +5,12 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.2.7] - 2026-10-07
+
+### Fixed
+- Predheat comparison ignores Predheat values older than 30 minutes, so a disabled or stopped Predheat
+  (whose last states remain in HA) is no longer scored as if it were a current forecast.
+
 ## [0.2.6] - 2026-10-07
 
 ### Changed

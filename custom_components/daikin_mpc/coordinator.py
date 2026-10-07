@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+EXTERNAL_MAX_AGE_S = 30 * 60
 
 
 class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
@@ -136,7 +137,9 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             (CONF_PREDHEAT_H8, "predheat_8h", 8.0),
         ):
             rd = self._reading(self.mapping.get(key), False)
-            if rd is not None and rd.value is not None:
+            # Predheat refreshes every few minutes; an old value means it is disabled or stopped, and
+            # scoring that stale forecast would distort the comparison.
+            if rd is not None and rd.value is not None and rd.age_s <= EXTERNAL_MAX_AGE_S:
                 out[name] = (horizon, rd.value)
         return out
 

@@ -182,3 +182,18 @@ async def test_predheat_fields_accepted_while_predbat_is_down(hass: HomeAssistan
         result = await hass.config_entries.flow.async_configure(result["flow_id"], data)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["predheat_h1"] == "predheat.internal_temp_h1"
+
+
+async def test_stale_predheat_forecast_is_not_scored(hass: HomeAssistant, weather_calls) -> None:
+    _set_states(hass)
+    entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    assert "predheat_1h" in coord._external()
+    with patch(
+        "custom_components.daikin_mpc.coordinator.dt_util.utcnow",
+        return_value=dt_util.utcnow() + timedelta(hours=1),
+    ):
+        assert coord._external() == {}
