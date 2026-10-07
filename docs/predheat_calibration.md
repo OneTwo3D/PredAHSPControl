@@ -1,4 +1,20 @@
-# Predheat calibration — first pass (offline, winter 2025/26)
+# Predheat calibration (offline, winter 2025/26)
+
+> **Update (M1):** the values below were validated by replaying Predheat over 150 winter days
+> (`tools/predheat_replay.py`, report in `docs/predheat_replay_report.md`). The **recommended values are
+> the "fitted" set in that report**, which supersede the first-pass table below where they differ
+> (`heat_loss_degrees` 0.0315, `heat_min_power` 680, `heat_cop` 3.81 with a full `heat_pump_efficiency`
+> table). Hold-out result versus current settings: daily heating-electricity error 0.98 → 0.84 kWh/day,
+> bias +0.40 → −0.11 kWh/day, hourly room-temperature RMSE 1.90 → 1.16 K, 24 h room error 2.56 → 1.16 K.
+>
+> A further "calibrated" set fits room temperature better (RMSE 0.75 K) but pushes several parameters to
+> their search limits and over-predicts electricity by ~0.5 kWh/day; since Predbat consumes the energy
+> forecast it is **not** recommended. The remaining room-temperature error is structural: Predheat does
+> not model the Daikin's RT modulation or the overnight deviation schedule.
+>
+> `hysteresis`/`hysteresis_off` stay at 1.0. The `heating_energy`/`volume_temp` entity fixes below still apply.
+
+## First pass (superseded where noted)
 
 Based on the daily/hourly fits in `docs/data_inventory.md` and the current `predheat:` section of `apps.yaml` (shared 7 October 2026). Predheat semantics verified against `apps/predbat/predheat.py` (batpred `main`):
 

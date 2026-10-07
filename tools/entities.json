@@ -1,0 +1,27 @@
+{
+  "_comment": "Verified entity mapping for this installation (see docs/entity_mapping.md). Read-only export list.",
+  "statistics": {
+    "ti": "sensor.bridge0_sensors_temperature_room",
+    "to": "sensor.bridge0_sensors_temperature_outside",
+    "to_ecowitt": "sensor.ecowitt_outdoor_temperature",
+    "lwt": "sensor.bridge0_sensors_temperature_r1t_hp2gas_water",
+    "rwt": "sensor.bridge0_sensors_temperature_r4t_return_water",
+    "flow": "sensor.bridge0_sensors_flow",
+    "elec_w": "sensor.bridge0_power_consumption_heatpump",
+    "heat_w": "sensor.bridge0_power_production_heatpump",
+    "buh_w": "sensor.bridge0_power_consumption_buh",
+    "hz": "sensor.bridge0_mode_compressor_rpm",
+    "lwt_set": "sensor.bridge0_lwt_lwt_setpoint",
+    "deviation": "sensor.bridge0_lwt_deviation_heating",
+    "room_set": "sensor.bridge0_room_room_heating_setpoint",
+    "heat_kwh": "sensor.bridge0_meters_energy_produced_compressor_heating",
+    "elec_kwh": "sensor.bridge0_meters_electricity_consumed_compressor_heating",
+    "dhw_heat_kwh": "sensor.bridge0_meters_energy_produced_compressor_dhw",
+    "dhw_elec_kwh": "sensor.bridge0_meters_electricity_consumed_compressor_dhw",
+    "buh_kwh": "sensor.bridge0_meters_electricity_consumed_backup_heating",
+    "run_h": "sensor.bridge0_meters_hours_compressor_heating",
+    "dhw_run_h": "sensor.bridge0_meters_hours_compressor_dhw",
+    "starts": "sensor.bridge0_meters_starts_compressor",
+    "tank_c": "sensor.bridge0_dhw_temperature_r5t_dhw_tank"
+  }
+}

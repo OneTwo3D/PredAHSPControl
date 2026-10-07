@@ -240,7 +240,7 @@ Condensed from v1 §50; all v1 requirements remain in force.
 
 Each milestone = one branch/PR with tests, ruff, mypy.
 
-### M0 — Discovery and data inventory (read-only HA API) ← next
+### M0 — Discovery and data inventory (read-only HA API) ✅
 1. Connect read-only (long-lived token of a dedicated non-admin user, from environment secrets `HA_URL`, `HA_TOKEN`).
 2. `GET /api/states`: inventory P1P2MQTT, Predbat, Predheat, weather, thermostat, energy entities; record units, `state_class`, attributes. Output: `docs/entity_mapping.md`, unresolved-capability list.
 3. Read Predbat and Predheat current configuration as exposed in entities; document what Predheat currently predicts vs actual.
@@ -250,7 +250,9 @@ Each milestone = one branch/PR with tests, ruff, mypy.
 
 Acceptance: verified mappings, data inventory, retention recommendation actioned or explicitly declined. No guessed IDs, no writes.
 
-### M1 — Offline identification and Predheat calibration
+### M1 — Offline identification and Predheat calibration ✅ (7 Oct 2026)
+Delivered: `custom_components/daikin_mpc/core/{thermal_model,emitter_model,heatpump_model,intervals,predheat_sim,regression}.py`, `tools/{ha_client,ha_export,dataset,fit_offline,predheat_replay}.py`, reports `docs/offline_fit_report.md`, `docs/predheat_replay_report.md`. Next: M2.
+
 `tools/ha_export.py`, `tools/fit_offline.py`, core `thermal_model`, `emitter_model`, `heatpump_model` (fit-only), `intervals` classifier. Fit UA, C, Q_int, K, n, COP surface on last winter's hourly LTS (coarse) plus any raw data. Hourly means can't resolve C precisely; report its uncertainty honestly and refine live.
 Deliver `docs/offline_fit_report.md` and `docs/predheat_calibration.md`.
 Acceptance: synthetic-data convergence tests; held-out backtest error reported; Predheat suggestions with before/after error.

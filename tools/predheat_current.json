@@ -1,0 +1,15 @@
+{
+  "_comment": "Current predheat: settings from apps.yaml (7 Oct 2026), heat-pump relevant subset.",
+  "heat_loss_watts": 156,
+  "heat_loss_degrees": 0.0194,
+  "heat_gain_static": 400,
+  "heat_output": 10630,
+  "heat_volume": 121,
+  "heat_max_power": 4000,
+  "heat_min_power": 500,
+  "heat_cop": 3.68,
+  "flow_difference_target": 5,
+  "hysteresis": 1.0,
+  "hysteresis_off": 1.0,
+  "weather_compensation": {"-40": 47.0, "-23": 47.0, "10": 25.0, "20": 25.0}
+}
