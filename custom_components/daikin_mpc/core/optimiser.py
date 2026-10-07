@@ -7,11 +7,13 @@ Objective (pence)::
 
     J = Σ electricity_kWh · marginal_rate
       + w_bound · (K·h outside [room_min, room_max])  + w_bound2 · (K²·h outside)
+      + w_target · (K·h below the comfort-period target) + w_target2 · (K²·h below it)
       + w_start · compressor starts (thermostat off→on)
       + w_move  · setpoint changes (per 0.5 K)
 
 The comfort limits are treated as hard in intent: their penalty is far above any plausible saving, so a
-plan only violates them when the plant cannot avoid it (reported as infeasible). There is no fixed
+plan only violates them when the plant cannot avoid it (reported as infeasible). Comfort-period targets
+(e.g. 21 °C 07–09 and 18–24) are soft: missing them costs a substantial but finite penalty. There is no fixed
 night setback: lower night setpoints are chosen only when they reduce J.
 
 Search: dynamic programming over hours with state merging on (setpoint, room temperature bin,
@@ -39,6 +41,8 @@ class OptimiserConfig:
     ti_bin_k: float = 0.1
     w_bound_p_per_kh: float = 2000.0  # above any plausible price incl. VPP events: limits are hard
     w_bound2_p_per_k2h: float = 20000.0
+    w_target_p_per_kh: float = 30.0
+    w_target2_p_per_k2h: float = 60.0
     w_start_p: float = 1.0
     w_move_p_per_half_k: float = 0.3
 
@@ -62,6 +66,7 @@ class PlanInputs:
     lwt_set_c: Sequence[float]  # per step, weather-curve LWT
     rate_p: Sequence[float]  # per step, marginal pence/kWh
     baseline_setpoint_c: Sequence[float]  # per hour, what the native schedule would do
+    target_c: Sequence[float | None] | None = None  # per step, soft comfort target (None = none)
 
 
 @dataclass
@@ -135,6 +140,10 @@ def _simulate_hour(
         if running and not was:
             starts += 1
             obj += cfg.w_start_p
+        tgt = inp.target_c[k] if inp.target_c is not None else None
+        if tgt is not None and ti < tgt:
+            d = tgt - ti
+            obj += (cfg.w_target_p_per_kh * d + cfg.w_target2_p_per_k2h * d * d) * dt
         below = max(0.0, cfg.room_min_c - ti)
         above = max(0.0, ti - cfg.room_max_c)
         dev = below + above

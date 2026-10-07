@@ -14,6 +14,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_C,
+    CONF_COMFORT_PERIODS,
     CONF_COST_BASIS,
     CONF_GAINS,
     CONF_LEARNING,
@@ -30,7 +31,7 @@ from .const import (
     DOMAIN,
     SUGGESTED,
 )
-from .core.cost_model import parse_tariff
+from .core.cost_model import parse_periods, parse_tariff
 from .core.telemetry import REQUIRED_ROLES, Role
 
 _SENSOR = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
@@ -150,6 +151,7 @@ OPTIONS_SCHEMA = vol.Schema(
                 min=17, max=26, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX
             )
         ),
+        vol.Required(CONF_COMFORT_PERIODS): selector.TextSelector(),
         vol.Required(CONF_COST_BASIS): selector.SelectSelector(
             selector.SelectSelectorConfig(options=["battery", "tariff"], translation_key="cost_basis")
         ),
@@ -167,6 +169,12 @@ class DaikinMpcOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             if float(user_input[CONF_ROOM_MIN]) >= float(user_input[CONF_ROOM_MAX]):
                 errors[CONF_ROOM_MAX] = "room_range"
+            try:
+                for p in parse_periods(str(user_input[CONF_COMFORT_PERIODS])):
+                    if not float(user_input[CONF_ROOM_MIN]) <= p.rate_p <= float(user_input[CONF_ROOM_MAX]):
+                        errors[CONF_COMFORT_PERIODS] = "comfort_outside_range"
+            except ValueError:
+                errors[CONF_COMFORT_PERIODS] = "bad_periods"
             for key in (CONF_TARIFF_IMPORT, CONF_TARIFF_EXPORT):
                 try:
                     parse_tariff(str(user_input[key]))

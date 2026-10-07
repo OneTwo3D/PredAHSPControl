@@ -18,6 +18,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_C,
+    CONF_COMFORT_PERIODS,
     CONF_COST_BASIS,
     CONF_GAINS,
     CONF_LEARNING,
@@ -44,6 +45,7 @@ from .const import (
 from .core.cost_model import (
     CostProvider,
     efficiency_from_predbat,
+    parse_periods,
     parse_rate_series,
     parse_tariff,
 )
@@ -86,6 +88,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         self.cost_basis = str(opts[CONF_COST_BASIS])
         self.fallback_import = parse_tariff(str(opts[CONF_TARIFF_IMPORT]))
         self.fallback_export = parse_tariff(str(opts[CONF_TARIFF_EXPORT]))
+        self.comfort_periods = parse_periods(str(opts[CONF_COMFORT_PERIODS]))
         self.recommendation: Recommendation | None = None
         self.cost_source = ""
         self.optimiser_error: str | None = None
@@ -216,7 +219,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         self.cost_source = cost.source
         try:
             self.recommendation = await self.hass.async_add_executor_job(
-                self.engine.recommend, snap, self._weather, cost, self.opt_cfg
+                self.engine.recommend, snap, self._weather, cost, self.opt_cfg, self.comfort_periods
             )
             self.optimiser_error = None
         except Exception as err:  # the optimiser is advisory; never break telemetry/learning

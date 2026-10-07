@@ -135,3 +135,21 @@ def test_evaluate_matches_optimiser_path():
     r = recommend(inp, B, P, COP)
     again = evaluate(r.plan.setpoints_c, inp, B, P, COP, OptimiserConfig())
     assert again.cost_p == pytest.approx(r.plan.cost_p)
+
+
+def test_comfort_periods_raise_room_temperature_in_the_evening():
+    from custom_components.daikin_mpc.core.cost_model import parse_periods
+    from custom_components.daikin_mpc.core.engine import comfort_targets
+
+    cp = CostProvider(
+        parse_tariff(DEFAULT_TARIFF), parse_tariff(DEFAULT_EXPORT_TARIFF), round_trip_efficiency=0.885
+    )
+    base = inputs(rates_for(cp), ti0=20.2)
+    tg = comfort_targets(T0, N, 0.25, parse_periods("07:00-09:00=21, 18:00-24:00=21"))
+    with_targets = PlanInputs(**{**base.__dict__, "target_c": tg})
+    r0 = recommend(base, B, P, COP)
+    r1 = recommend(with_targets, B, P, COP)
+    evening = slice(4, 6 * 4)  # 19:00-24:00 (steps after the first hour)
+    assert np.mean(r1.plan.ti_c[evening]) > np.mean(r0.plan.ti_c[evening])
+    assert np.mean(r1.plan.ti_c[evening]) >= 20.8
+    assert r1.plan.min_ti_c >= 19.95

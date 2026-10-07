@@ -153,6 +153,7 @@ async def test_options_flow(hass: HomeAssistant, weather_calls) -> None:
             "prior_c_kwh_per_k": 3.5,
             "room_min_c": 20.0,
             "room_max_c": 22.0,
+            "comfort_periods": "07:00-09:00=21, 18:00-24:00=21",
             "cost_basis": "battery",
             "fallback_import_tariff": "00:00-05:00=7.6, 05:00-24:00=34.87",
             "fallback_export_tariff": "00:00-05:00=2.0, 05:00-24:00=12.0",
@@ -225,13 +226,15 @@ async def test_options_reject_bad_tariff_and_range(hass: HomeAssistant, weather_
             "prior_c_kwh_per_k": 3.0,
             "room_min_c": 22.0,
             "room_max_c": 21.0,
+            "comfort_periods": "07:00-09:00=21",
             "cost_basis": "battery",
             "fallback_import_tariff": "00:00-05:00=7.6",
             "fallback_export_tariff": "00:00-24:00=12",
         },
     )
     assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"room_max_c": "room_range", "fallback_import_tariff": "bad_tariff"}
+    assert result["errors"]["room_max_c"] == "room_range"
+    assert result["errors"]["fallback_import_tariff"] == "bad_tariff"
 
 
 async def test_recommendation_uses_predbat_rates(hass: HomeAssistant, weather_calls) -> None:

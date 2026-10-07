@@ -59,12 +59,14 @@ CONF_ROOM_MAX: Final = "room_max_c"
 CONF_COST_BASIS: Final = "cost_basis"
 CONF_TARIFF_IMPORT: Final = "fallback_import_tariff"
 CONF_TARIFF_EXPORT: Final = "fallback_export_tariff"
+CONF_COMFORT_PERIODS: Final = "comfort_periods"
 DEFAULT_OPTIMISER: Final = {
     CONF_ROOM_MIN: 20.0,
     CONF_ROOM_MAX: 22.0,
     CONF_COST_BASIS: "battery",
     CONF_TARIFF_IMPORT: "00:00-05:00=7.6, 05:00-24:00=34.87",
     CONF_TARIFF_EXPORT: "00:00-05:00=2.0, 05:00-24:00=12.0",
+    CONF_COMFORT_PERIODS: "07:00-09:00=21, 18:00-24:00=21",
 }
 # Predbat entities read for prices and losses (published by the Predbat add-on while it runs)
 PREDBAT_RATES: Final = "predbat.rates"

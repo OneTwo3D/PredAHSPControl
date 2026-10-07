@@ -16,7 +16,7 @@ import numpy as np
 
 from .accumulator import DayAggregator, DayRecord, HourAccumulator, HourRecord
 from .cop_learner import CopLearner
-from .cost_model import CostProvider
+from .cost_model import CostProvider, TariffPeriod, period_value
 from .emitter_model import RadiatorParams
 from .heatpump_model import CopCurve
 from .learner import BuildingLearner, LearnerConfig
@@ -306,6 +306,7 @@ class ShadowEngine:
         to_forecast: list[tuple[datetime, float]] | None,
         cost: CostProvider,
         cfg: OptimiserConfig,
+        comfort_periods: tuple[TariffPeriod, ...] = (),
     ) -> Recommendation | None:
         """Shadow recommendation: cheapest hourly setpoint plan within the comfort range.
 
@@ -334,6 +335,7 @@ class ShadowEngine:
                 cost.marginal_rate(t + timedelta(hours=STEP_H * (i + 0.5))) for i in range(len(to_steps))
             ],
             baseline_setpoint_c=baseline,
+            target_c=comfort_targets(t, len(to_steps), STEP_H, comfort_periods),
         )
         return recommend(inp, self.learner.params, self.plant, self.cop, cfg)
 
@@ -396,3 +398,14 @@ class ShadowEngine:
             else:
                 warn.append("COP learner state invalid; using prior curve")
         return warn
+
+
+def comfort_targets(
+    start: datetime, steps: int, step_h: float, periods: tuple[TariffPeriod, ...]
+) -> list[float | None]:
+    """Soft comfort target per step (local time) from ``"HH:MM-HH:MM=°C"`` periods."""
+    out: list[float | None] = []
+    for i in range(steps):
+        t = start + timedelta(hours=step_h * (i + 1))  # temperature at the end of the step
+        out.append(period_value(periods, t.hour * 60 + t.minute))
+    return out

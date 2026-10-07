@@ -124,20 +124,24 @@
           "room_max_c": "Highest allowed room temperature",
           "cost_basis": "How electricity is priced",
           "fallback_import_tariff": "Import tariff if Predbat is not available",
-          "fallback_export_tariff": "Export tariff if Predbat is not available"
+          "fallback_export_tariff": "Export tariff if Predbat is not available",
+          "comfort_periods": "Preferred temperature periods"
         },
         "data_description": {
           "room_min_c": "Recommendations keep the room at or above this all day and night.",
           "room_max_c": "Recommendations never plan the room above this.",
           "cost_basis": "Battery-aware: daytime energy is valued at what it would earn if exported, or cost to store at night. Tariff: raw import prices.",
           "fallback_import_tariff": "Prices normally come from Predbat (predbat.rates). Format: 00:00-05:00=7.6, 05:00-24:00=34.87",
-          "fallback_export_tariff": "Normally from Predbat (predbat.rates_export). Same format."
+          "fallback_export_tariff": "Normally from Predbat (predbat.rates_export). Same format.",
+          "comfort_periods": "Times when the room should ideally be warmer, e.g. 07:00-09:00=21, 18:00-24:00=21. Outside them the lowest allowed temperature applies."
         }
       }
     },
     "error": {
       "room_range": "Highest must be above lowest.",
-      "bad_tariff": "Use HH:MM-HH:MM=price, covering the whole day."
+      "bad_tariff": "Use HH:MM-HH:MM=price, covering the whole day.",
+      "bad_periods": "Use HH:MM-HH:MM=°C, separated by commas.",
+      "comfort_outside_range": "Preferred temperatures must lie between the lowest and highest allowed."
     }
   },
   "selector": {

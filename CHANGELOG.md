@@ -5,6 +5,17 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.3.1] - 2026-10-07
+
+### Added
+- **Preferred temperature periods** (option, default `07:00-09:00=21, 18:00-24:00=21`): the optimiser aims
+  for these temperatures (soft target); outside them only the lowest allowed temperature (default 20 °C)
+  applies. Hard limits 20–22 °C unchanged.
+
+### Changed
+- Default lowest room temperature 20.0 °C (was 20.5 °C).
+- Replay compares against a simple timer schedule and reports the shortfall against the preferred periods.
+
 ## [0.3.0] - 2026-10-07
 
 ### Added — M3 shadow optimiser (recommendations only, nothing is sent to the heat pump)

@@ -5,7 +5,7 @@ measured outdoor temperature as a perfect forecast and the native weather curve.
 simulated with the same building/heat-pump model and compared:
 
 * ``actual``    – the room-setpoint schedule that was really used (incl. the old night setback),
-* ``fixed``     – a constant setpoint at the comfort minimum + 0.5 K (no setback),
+* ``fixed``     – a simple timer: 21.5 °C setpoint in the comfort periods, 20.5 °C otherwise,
 * ``optimised`` – the optimiser's plan (comfort range 20–22 °C by default).
 
 Prices: last winter's Predbat rate history is not available, so the configured tariff is used (no VPP
@@ -36,12 +36,15 @@ from custom_components.daikin_mpc.core.cost_model import (
     DEFAULT_TARIFF,
     CostProvider,
     efficiency_from_predbat,
+    parse_periods,
     parse_tariff,
+    period_value,
 )
-from custom_components.daikin_mpc.core.engine import EngineConfig, ShadowEngine
+from custom_components.daikin_mpc.core.engine import EngineConfig, ShadowEngine, comfort_targets
 from custom_components.daikin_mpc.core.optimiser import OptimiserConfig, PlanInputs, evaluate, optimise
 
 STEPS_PER_H = 4
+COMFORT = parse_periods("07:00-09:00=21, 18:00-24:00=21")
 
 
 def day_inputs(
@@ -64,7 +67,14 @@ def day_inputs(
         lwt_set_c=[eng.wc_lwt(v) for v in to],
         rate_p=[cost.marginal_rate(t) for t in times],
         baseline_setpoint_c=[float(round(v * 2) / 2) for v in hh.room_set_mean],
+        target_c=comfort_targets(start.to_pydatetime(), len(to), 0.25, COMFORT),
     )
+
+
+def shortfall(ti: list[float], target: object) -> float:
+    """K·h below the comfort-period target over the plan."""
+    tg = list(target) if target is not None else []  # type: ignore[call-overload]
+    return float(sum(max(0.0, t - x) * 0.25 for x, t in zip(ti[1:], tg, strict=False) if t is not None))
 
 
 def run(h: pd.DataFrame, start: str, end: str, basis: str, cfg: OptimiserConfig) -> pd.DataFrame:
@@ -82,7 +92,12 @@ def run(h: pd.DataFrame, start: str, end: str, basis: str, cfg: OptimiserConfig)
             continue
         args = (eng.learner.params, eng.plant, eng.cop, cfg)
         actual = evaluate(inp.baseline_setpoint_c, inp, *args)
-        fixed = evaluate([cfg.room_min_c + 0.5] * 24, inp, *args)
+        # simple timer schedule matching the comfort periods: 21.5 °C setpoint in them, 20.5 °C otherwise
+        timer = [
+            21.5 if period_value(COMFORT, ((18 + hh) % 24) * 60 + 30) is not None else 20.5
+            for hh in range(24)
+        ]
+        fixed = evaluate(timer, inp, *args)
         t0 = time.perf_counter()
         opt = optimise(inp, *args)
         rt = time.perf_counter() - t0
@@ -97,6 +112,10 @@ def run(h: pd.DataFrame, start: str, end: str, basis: str, cfg: OptimiserConfig)
                 },
                 **{f"{k}_min": r.min_ti_c for k, r in (("actual", actual), ("fixed", fixed), ("opt", opt))},
                 **{f"{k}_starts": r.starts for k, r in (("actual", actual), ("fixed", fixed), ("opt", opt))},
+                **{
+                    f"{k}_short": shortfall(r.ti_c, inp.target_c)
+                    for k, r in (("actual", actual), ("fixed", fixed), ("opt", opt))
+                },
                 "opt_night_sp": float(np.mean(opt.setpoints_c[6:11])),  # 00:00-05:00
                 "opt_day_sp": float(np.mean(opt.setpoints_c[14:22])),  # 08:00-16:00
                 "runtime_s": rt,
@@ -110,21 +129,21 @@ def summary(df: pd.DataFrame, cfg: OptimiserConfig) -> list[str]:
         return int((df[col] < cfg.room_min_c - 0.05).sum())
 
     lines = [
-        "| Schedule | Cost p/day | kWh/day | Days below comfort min | Mean lowest room °C | Starts/day |",
-        "|---|---|---|---|---|---|",
+        "| Schedule | Cost p/day | kWh/day | Days below 20 °C min | Mean lowest room °C | Shortfall vs 21 °C periods (K·h/day) | Starts/day |",
+        "|---|---|---|---|---|---|---|",
     ]
     for k, name in (
         ("actual", "Actual (incl. night setback)"),
-        ("fixed", f"Fixed {cfg.room_min_c + 0.5:.1f} °C"),
+        ("fixed", "Simple timer (21.5 °C in periods, 20.5 °C otherwise)"),
         ("opt", "Optimised"),
     ):
         lines.append(
             f"| {name} | {df[f'{k}_cost'].mean():.1f} | {df[f'{k}_kwh'].mean():.2f} | {below(f'{k}_min')} "
-            f"| {df[f'{k}_min'].mean():.2f} | {df[f'{k}_starts'].mean():.1f} |"
+            f"| {df[f'{k}_min'].mean():.2f} | {df[f'{k}_short'].mean():.2f} | {df[f'{k}_starts'].mean():.1f} |"
         )
     lines.append("")
     lines.append(
-        f"Optimised vs fixed: {df.fixed_cost.mean() - df.opt_cost.mean():+.1f} p/day "
+        f"Optimised vs simple timer: {df.fixed_cost.mean() - df.opt_cost.mean():+.1f} p/day "
         f"({100 * (1 - df.opt_cost.sum() / df.fixed_cost.sum()):+.1f} %). Mean optimised setpoint "
         f"night (00–05) {df.opt_night_sp.mean():.2f} °C, day (08–16) {df.opt_day_sp.mean():.2f} °C. "
         f"Runtime median {df.runtime_s.median():.2f} s, max {df.runtime_s.max():.2f} s."
@@ -146,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         "",
         f"Generated {date.today().isoformat()} by `tools/m3_replay.py`. One 24 h plan per day from 18:00, "
         f"{a.start} … {a.end}. Comfort range {cfg.room_min_c}–{cfg.room_max_c} °C. Measured outdoor "
-        "temperature used as a perfect forecast; fixed tariff (7.6p 00–05, 34.87p otherwise; export 2p/12p); "
+        "temperature used as a perfect forecast; preferred 21 °C 07–09 and 18–24 (soft); fixed tariff (7.6p 00–05, 34.87p otherwise; export 2p/12p); "
         "no VPP events. **All figures are model estimates for comparing schedules, not measured savings.**",
         "",
     ]
@@ -160,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         "## Notes",
         "",
         "- The actual schedule falls below the new 20 °C minimum on most nights (old setback ≈ 19.3 °C), so it",
-        "  is cheaper but not comparable on comfort; the fixed schedule is the fair reference.",
+        "  is cheaper but not comparable on comfort; the simple timer is the fair reference.",
         "- Thermostat hysteresis, RT-modulation gain and cycling are model priors until calibrated from this",
         "  winter's data (M3 tuning step).",
         "",

@@ -50,6 +50,32 @@ def _minutes(hhmm: str) -> int:
     return v
 
 
+def parse_periods(text: str) -> tuple[TariffPeriod, ...]:
+    """Parse ``"HH:MM-HH:MM=value, ..."`` into periods (may wrap midnight; gaps allowed)."""
+    periods: list[TariffPeriod] = []
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        span, value = part.split("=")
+        a, b = span.split("-")
+        start, end, v = _minutes(a), _minutes(b), float(value)
+        if not math.isfinite(v):
+            raise ValueError("value must be finite")
+        if end <= start:
+            periods += [TariffPeriod(start, 1440, v), TariffPeriod(0, end, v)]
+        else:
+            periods.append(TariffPeriod(start, end, v))
+    return tuple(periods)
+
+
+def period_value(periods: tuple[TariffPeriod, ...], minute_of_day: int) -> float | None:
+    for p in periods:
+        if p.start_min <= minute_of_day < p.end_min:
+            return p.rate_p
+    return None
+
+
 def parse_tariff(text: str) -> tuple[TariffPeriod, ...]:
     """Parse ``"HH:MM-HH:MM=rate, ..."``; periods may wrap midnight. Must cover the whole day."""
     periods: list[TariffPeriod] = []
