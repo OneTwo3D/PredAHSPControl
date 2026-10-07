@@ -5,6 +5,21 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.4] - 2026-10-07
+
+Fifth review round (Codex, 3 findings on 0.4.3), see `docs/review_2026-10.md`.
+
+### Fixed
+- **HA restarts no longer lose the current day's energy:** the in-progress hour and the day's hours are
+  now saved with the learned state, so a restart (e.g. for an update) neither drops energy nor lets a
+  partial day into learning. Without saved state (first start mid-day) the first date is skipped.
+- Battery charging price considers every rate change in the preceding 24 h, so short cheap slots
+  (e.g. 15 minutes) are no longer missed.
+
+### Tools
+- Offline days need valid indoor and outdoor temperatures for all but two hours; otherwise their
+  means and temperature changes are not used.
+
 ## [0.4.3] - 2026-10-07
 
 Fourth review round (Codex, 4 findings on 0.4.2), see `docs/review_2026-10.md`.

@@ -385,6 +385,9 @@ class ShadowEngine:
             "pending_day": self.pending_day.to_dict() if self.pending_day else None,
             "last_counters": dict(self.hours._last_counter),
             "counter_time": {k: v.isoformat() for k, v in self.hours.counter_time.items()},
+            # in-progress hour and date, so a restart neither loses energy nor learns from a partial day
+            "hour_acc": self.hours.to_dict(),
+            "day_acc": self.days.to_dict(),
             "cop_learner": self.cop_learner.to_dict(),
         }
 
@@ -407,6 +410,8 @@ class ShadowEngine:
             ("setpoint profile", lambda: self._load_profile(d)),
             ("pending day", lambda: self._load_pending_day(d)),
             ("meter counters", lambda: self._load_counters(d)),
+            ("current hour", lambda: self.hours.load_dict(dict(d["hour_acc"])) if "hour_acc" in d else None),
+            ("current day", lambda: self.days.load_dict(dict(d["day_acc"])) if "day_acc" in d else None),
         ]
         for name, fn in sections:
             try:

@@ -51,7 +51,29 @@ class HourRecord:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["start"] = self.start.isoformat()
+        for k in ("hz_min", "hz_max", "flow_min"):
+            d[k] = _num_out(d[k])
         return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> HourRecord:
+        start = datetime.fromisoformat(str(d["start"]))
+        if start.tzinfo is None:
+            raise ValueError("naive hour start")
+        return cls(
+            start=start,
+            coverage=_num_in(d["coverage"], 0.0, 1.0),
+            means={str(k): _num_in(v) for k, v in dict(d["means"]).items()},
+            hz_min=_num_in(d.get("hz_min"), allow_nan=True),
+            hz_max=_num_in(d.get("hz_max"), allow_nan=True),
+            flow_min=_num_in(d.get("flow_min"), allow_nan=True),
+            deltas_kwh={str(k): _num_in(v, 0.0) for k, v in dict(d["deltas_kwh"]).items()},
+            defrost=bool(d["defrost"]),
+            dhw=bool(d["dhw"]),
+            cls=str(IntervalClass(d["cls"]).value),
+            counter_gap=bool(d.get("counter_gap", False)),
+            counter_stale=bool(d.get("counter_stale", False)),
+        )
 
 
 @dataclass
@@ -92,6 +114,20 @@ class _Acc:
     dhw: bool = False
     counter_gap: bool = False
     counter_stale: bool = False
+
+
+def _num_out(v: float) -> float | None:
+    """JSON-safe number (NaN/inf → None)."""
+    return v if math.isfinite(v) else None
+
+
+def _num_in(v: object, lo: float = -math.inf, hi: float = math.inf, allow_nan: bool = False) -> float:
+    if v is None and allow_nan:
+        return float("nan")
+    x = float(v)  # type: ignore[arg-type]
+    if not (math.isfinite(x) and lo <= x <= hi):
+        raise ValueError(f"invalid number {v!r}")
+    return x
 
 
 def _local_date(t: datetime, ref: datetime) -> date:
@@ -211,6 +247,64 @@ class HourAccumulator:
             incs[k] = (inc, seen if seen is not None else s.time)
         return incs, dropped, stale
 
+    def to_dict(self) -> dict[str, Any]:
+        """The in-progress hour, so a restart does not lose its samples and energy."""
+        a = self._acc
+        acc = None
+        if a is not None:
+            acc = {
+                "start": a.start.isoformat(),
+                "key": a.key.isoformat(),
+                "covered_s": a.covered_s,
+                "sums": a.sums,
+                "weights": a.weights,
+                "hz_min": _num_out(a.hz_min),
+                "hz_max": _num_out(a.hz_max),
+                "flow_min": _num_out(a.flow_min),
+                "deltas": a.deltas,
+                "defrost": a.defrost,
+                "dhw": a.dhw,
+                "counter_gap": a.counter_gap,
+                "counter_stale": a.counter_stale,
+            }
+        return {"acc": acc, "last_time": self._last_time.isoformat() if self._last_time else None}
+
+    def load_dict(self, d: dict[str, Any]) -> None:
+        """Restore the in-progress hour (raises on invalid data; nothing is changed then)."""
+        raw = d.get("acc")
+        acc = None
+        if raw is not None:
+            start, key = datetime.fromisoformat(str(raw["start"])), datetime.fromisoformat(str(raw["key"]))
+            if start.tzinfo is None or key.tzinfo is None:
+                raise ValueError("naive time")
+            sums = {str(k): _num_in(v) for k, v in dict(raw["sums"]).items()}
+            weights = {str(k): _num_in(v, 0.0, 3600.0) for k, v in dict(raw["weights"]).items()}
+            hz_min, hz_max = (
+                _num_in(raw.get("hz_min"), allow_nan=True),
+                _num_in(raw.get("hz_max"), allow_nan=True),
+            )
+            flow_min = _num_in(raw.get("flow_min"), allow_nan=True)
+            acc = _Acc(
+                start=start,
+                key=key,
+                covered_s=_num_in(raw["covered_s"], 0.0, 3600.0),
+                sums=sums,
+                weights=weights,
+                hz_min=hz_min if math.isfinite(hz_min) else math.inf,
+                hz_max=hz_max if math.isfinite(hz_max) else -math.inf,
+                flow_min=flow_min if math.isfinite(flow_min) else math.inf,
+                deltas={str(k): _num_in(v, 0.0) for k, v in dict(raw["deltas"]).items()},
+                defrost=bool(raw["defrost"]),
+                dhw=bool(raw["dhw"]),
+                counter_gap=bool(raw["counter_gap"]),
+                counter_stale=bool(raw["counter_stale"]),
+            )
+        lt = d.get("last_time")
+        last_time = datetime.fromisoformat(str(lt)) if lt else None
+        if last_time is not None and last_time.tzinfo is None:
+            raise ValueError("naive time")
+        self._acc, self._last_time = acc, last_time
+
     def _finish(self, a: _Acc) -> HourRecord:
         means = {k: a.sums[k] / w for k, w in a.weights.items() if w > 0}
         deltas = dict(a.deltas)
@@ -258,6 +352,25 @@ class DayAggregator:
         self._day: str | None = None
         self._tz: object = None
         self._hours: list[HourRecord] = []
+        # Without restored state the hours before the first one seen are unknown, so the first date
+        # is never emitted (its energy total would be partial).
+        self._first_partial = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"day": self._day, "hours": [h.to_dict() for h in self._hours]}
+
+    def load_dict(self, d: dict[str, Any]) -> None:
+        """Restore the current date's hours (raises on invalid data; nothing is changed then)."""
+        day = d.get("day")
+        hours = [HourRecord.from_dict(dict(x)) for x in d.get("hours") or []]
+        if day is not None:
+            date.fromisoformat(str(day))
+            if any(h.start.date().isoformat() != day for h in hours):
+                raise ValueError("hour outside its date")
+        self._day = None if day is None else str(day)
+        self._hours = hours
+        self._tz = hours[-1].start.tzinfo if hours else None
+        self._first_partial = day is None
 
     def add(self, h: HourRecord) -> DayRecord | None:
         day = h.start.date().isoformat()
@@ -268,8 +381,12 @@ class DayAggregator:
             # reaching into this hour) means energy may still be outstanding.
             last = self._hours[-1] if self._hours else None
             boundary_bad = h.counter_gap or h.counter_stale or (last is not None and last.counter_stale)
-            out = None if boundary_bad else self._finish()
+            out = None if boundary_bad or self._first_partial else self._finish()
+            self._first_partial = False
             self._hours = []
+        if self._day is None:
+            # first hour without restored state: the date is complete only if it starts at midnight
+            self._first_partial = (h.start.hour, h.start.minute) != (0, 0)
         self._day = day
         self._tz = h.start.tzinfo
         self._hours.append(h)

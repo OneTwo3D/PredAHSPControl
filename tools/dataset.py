@@ -103,7 +103,10 @@ def daily(h: pd.DataFrame, to_col: str = "to_mean") -> pd.DataFrame:
     # calendar day length from local midnights (23/25 on daylight-saving change days), not from the rows
     # present, so a day truncated at the end of the data is recognised as incomplete
     d["day_h"] = [day_length_h(t.date(), ZoneInfo(TZ)) for t in d.index]
-    complete = d["rows"] == d["day_h"]
+    # rows for every calendar hour, and valid indoor and outdoor means for all but at most two hours
+    temp_ok = (g["ti_mean"].count() >= d["day_h"] - 2) & (g[to_col].count() >= d["day_h"] - 2)
+    complete = (d["rows"] == d["day_h"]) & temp_ok
+    d.loc[~temp_ok, ["ti", "to"]] = np.nan
     for c in (*COUNTERS, *HOUR_METERS):
         if f"dd_{c}" in h:
             # complete accounting: every increment of the day included (same-day gaps are booked to the

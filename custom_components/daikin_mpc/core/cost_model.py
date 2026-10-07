@@ -157,13 +157,32 @@ class CostProvider:
         )
 
     def charge_rate(self, t: datetime) -> float:
-        """Cheapest import rate in the 24 h before ``t`` (when the battery was charged).
+        """Cheapest import rate in force at any time in the 24 h before ``t`` (when the battery was charged).
 
-        Each time uses the rate that applies then: Predbat's where its series covers it, the fixed
-        tariff otherwise, so an expired Predbat series cannot set the price and the fallback's cheap
-        rate is not used where Predbat's is known.
+        Evaluated at every rate change in that window, so short slots are never missed. Each instant uses
+        the rate that applies then: Predbat's where its series covers it, the fixed tariff otherwise, so
+        an expired series cannot set the price and the fallback's cheap rate is not used where Predbat's
+        is known.
         """
-        return min(self.tariff_rate(add_hours(t, -0.5 * k)) for k in range(48))
+        start = add_hours(t, -24.0)
+        instants = [start]
+        if self.series:
+            instants += [x for x in self._times if start <= x < t]
+            end = add_hours(self._times[-1], self.series_slot.total_seconds() / 3600)
+            if start <= end < t:
+                instants.append(end)  # the fixed tariff takes over where the series ends
+        # boundaries of the fixed tariff periods (local time) on each date the window touches
+        tz = t.tzinfo
+        d = start.date()
+        while d <= t.date():
+            for p in self.tariff:
+                if p.start_min < 1440:
+                    hh, mm = divmod(p.start_min, 60)
+                    x = datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz)
+                    if start <= x < t:
+                        instants.append(x)
+            d += timedelta(days=1)
+        return min(self.tariff_rate(x) for x in instants)
 
     def marginal_rate(self, t: datetime) -> float:
         raw = self.tariff_rate(t)

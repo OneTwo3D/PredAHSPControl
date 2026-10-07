@@ -504,3 +504,78 @@ def test_truncated_last_day_rejected_offline():
     ds._increments(h, "heat_kwh_sum", "heat_kwh")
     d = ds.daily(h)
     assert np.isnan(d["heat_kwh"].iloc[1]) and d["day_h"].iloc[1] == 24 and np.isnan(d["dti_next"].iloc[0])
+
+
+# --- round 5 ----------------------------------------------------------------------------
+def _run_days(restart_at=None):
+    eng = ShadowEngine(EngineConfig())
+    t = datetime(2026, 11, 1, 0, 0, tzinfo=UTC)
+    heat, days = 100.0, []
+    for i in range(12 * 49):
+        ti = t + timedelta(minutes=5 * i)
+        if restart_at is not None and ti == restart_at:
+            state = eng.to_dict()
+            eng = ShadowEngine(EngineConfig())
+            eng.load_dict(state)
+        heat += 1 / 12
+        eng.process(snap(ti, heat_kwh=heat), None)
+        if eng.last_day is not None and eng.last_day.day not in [d.day for d in days]:
+            days.append(eng.last_day)
+    return days
+
+
+def test_restart_keeps_the_days_energy():
+    plain = _run_days()
+    restarted = _run_days(datetime(2026, 11, 1, 1, 0, tzinfo=UTC))
+    assert [d.heat_kwh for d in restarted] == pytest.approx([d.heat_kwh for d in plain])
+    assert plain and plain[0].heat_kwh == pytest.approx(24.0, abs=0.1)
+
+
+def test_fresh_start_mid_day_does_not_emit_a_partial_day():
+    agg = DayAggregator()
+    acc = HourAccumulator()
+    t = datetime(2026, 11, 1, 1, 0, tzinfo=UTC)
+    out = []
+    for i in range(12 * 30):
+        for h in acc.add(snap(t + timedelta(minutes=5 * i), heat_kwh=100 + i / 12)):
+            r = agg.add(h)
+            if r:
+                out.append(r.day)
+    assert "2026-11-01" not in out
+
+
+def test_offline_day_needs_temperature_coverage():
+    import dataset as ds
+    import pandas as pd
+
+    idx = pd.date_range("2026-01-10", periods=72, freq="h", tz=ds.TZ)
+    h = pd.DataFrame(
+        {
+            "heat_kwh_sum": np.arange(72, dtype=float),
+            "ti_mean": 20.0,
+            "to_mean": 5.0,
+            "room_set_mean": 21.0,
+            "lwt_set_mean": 30.0,
+            "cls": "off",
+        },
+        index=idx,
+    )
+    h.loc[(idx >= idx[24]) & (idx < idx[48]) & (idx != idx[36]), "ti_mean"] = np.nan  # day 2: one reading
+    ds._increments(h, "heat_kwh_sum", "heat_kwh")
+    d = ds.daily(h)
+    assert np.isnan(d["heat_kwh"].iloc[1]) or np.isnan(d["ti"].iloc[1])
+    assert np.isnan(d["dti_next"].iloc[0]) and np.isnan(d["dti_next"].iloc[1])
+
+
+def test_charge_rate_finds_short_cheap_slots():
+    from custom_components.daikin_mpc.core.cost_model import CostProvider, parse_tariff
+
+    day = datetime(2026, 1, 10, 0, 0, tzinfo=UTC)
+    series = [
+        (day, 35.0),
+        (day + timedelta(hours=1), 1.0),
+        (day + timedelta(hours=1, minutes=15), 35.0),
+        (day + timedelta(hours=23, minutes=30), 35.0),
+    ]
+    cost = CostProvider(parse_tariff("00:00-24:00=35"), None, "battery", 0.9, series)
+    assert cost.charge_rate(datetime(2026, 1, 10, 12, 22, tzinfo=UTC)) == 1.0
