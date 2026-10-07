@@ -51,9 +51,12 @@ class CopLearner:
         day_h: float = 24.0,
         default_standby_w: float = 0.0,
     ) -> bool:
-        """``heating_elec_kwh`` includes standby; it is removed here using the learned standby."""
-        if standby_w is not None and math.isfinite(standby_w) and 0 <= standby_w <= 200:
-            self.standby_w = standby_w if self.standby_w is None else 0.9 * self.standby_w + 0.1 * standby_w
+        """``heating_elec_kwh`` includes standby; it is removed here using the learned standby.
+
+        ``standby_w`` (optional) is also learned here; callers that learn standby separately with
+        :meth:`update_standby` pass None so a day is not counted twice.
+        """
+        self.update_standby(standby_w)
         if not all(math.isfinite(v) for v in (to_c, heat_kwh, heating_elec_kwh, day_h)):
             return False
         sb = self.standby_w if self.standby_w is not None else default_standby_w
@@ -73,6 +76,11 @@ class CopLearner:
         self.to_w[i] += to_c * heating_elec_kwh
         self.days += 1
         return True
+
+    def update_standby(self, standby_w: float | None) -> None:
+        """Exponential average of the measured standby power (one update per day)."""
+        if standby_w is not None and math.isfinite(standby_w) and 0 <= standby_w <= 200:
+            self.standby_w = standby_w if self.standby_w is None else 0.9 * self.standby_w + 0.1 * standby_w
 
     def curve(self) -> tuple[CopCurve, int]:
         """Current curve and the number of bins backed by measurements."""

@@ -178,19 +178,27 @@ class HourAccumulator:
         # Counter increments cover the interval since each counter's previous reading; they are
         # computed before the hour rolls over so the part of the interval that lies in the closing
         # hour (e.g. 23:55-00:00) is booked there, not to the next hour (or date).
-        incs, gap_dropped, stale, restart = self._counter_increments(s)
+        incs, gap_dropped, stale, new_baseline = self._counter_increments(s)
+        # Completeness rule: a date's energy counts only if every mapped counter was observed
+        # continuously from the date's start to its end. A counter starting a new baseline at this
+        # sample (first reading, re-mapping, lost state) breaks the date it falls in, unless the sample
+        # is exactly at local midnight, and also the previous date if we crossed midnight since the
+        # last sample (that date's final interval was not measured).
+        at_midnight = (s.time.hour, s.time.minute, s.time.second, s.time.microsecond) == (0, 0, 0, 0)
         old = self._acc
         if old is not None and key != old.key:
             to_old, incs = _split(incs, s.time, add_hours(old.key, 1.0))
             _add(old, to_old)
             old.counter_stale |= stale
+            if new_baseline and old.start.date() != s.time.date():
+                old.counter_restart = True
             done.append(self._finish(old))
             self._acc = None
         if self._acc is None:
             local = key.astimezone(s.time.tzinfo) if s.time.tzinfo is not None else key
             self._acc = _Acc(start=local, key=key)
         a = self._acc
-        a.counter_restart |= restart
+        a.counter_restart |= new_baseline and not at_midnight
         _add(a, {k: inc for k, (inc, _) in incs.items()})
         a.counter_stale |= stale
         a.counter_gap |= gap_dropped
@@ -223,9 +231,9 @@ class HourAccumulator:
         """Per counter: (increment, start of the interval it covers); whether an increment across a
         midnight gap was dropped; whether any counter could not be read (stale bridge or a mapped
         counter unavailable), so energy may still be outstanding; whether a counter started a new
-        baseline after local midnight (its date's energy before that is unknown)."""
+        baseline here (no previous reading)."""
         incs: dict[str, tuple[float, datetime]] = {}
-        dropped = restart = False
+        dropped = new_baseline = False
         # Counters only from a live bridge: with a stale heartbeat HA still holds the last values, and
         # refreshing the baselines from them would hide the outage from the gap handling below.
         live = Role.HEARTBEAT not in s.issues
@@ -242,13 +250,7 @@ class HourAccumulator:
             # one local day it is kept, so daily totals stay right; across midnight it is dropped and
             # the day is marked so it is not used for learning.
             same_day = seen is not None and _local_date(seen, s.time) == s.time.date()
-            if prev is None and (s.time.hour, s.time.minute, s.time.second, s.time.microsecond) != (
-                0,
-                0,
-                0,
-                0,
-            ):
-                restart = True  # first baseline (start-up, re-mapping, lost state) after midnight
+            new_baseline |= prev is None
             inc = 0.0
             if prev is not None and gap and not same_day:
                 dropped = True
@@ -262,7 +264,7 @@ class HourAccumulator:
             self._last_counter[k] = v
             self.counter_time[k] = s.time
             incs[k] = (inc, seen if seen is not None else s.time)
-        return incs, dropped, stale, restart
+        return incs, dropped, stale, new_baseline
 
     def to_dict(self) -> dict[str, Any]:
         """The in-progress hour, so a restart does not lose its samples and energy."""

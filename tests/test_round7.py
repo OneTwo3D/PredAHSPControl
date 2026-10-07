@@ -55,7 +55,7 @@ def test_inconsistent_saved_hour_is_rejected_and_never_installed():
     del state["hour_acc"]["acc"]["sums"]["ti"]
     other = ShadowEngine(EngineConfig())
     warn = other.load_dict(state)
-    assert any("current hour" in w for w in warn)
+    assert any("energy accounting" in w for w in warn)
     other.process(snap(datetime(2026, 11, 1, 1, 5, tzinfo=UTC)), None)  # rollover must not raise
 
 

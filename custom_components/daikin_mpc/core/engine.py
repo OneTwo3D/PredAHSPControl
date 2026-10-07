@@ -298,12 +298,12 @@ class ShadowEngine:
             days=1
         ):
             self.learner.update_day(prev.ti, prev.to, prev.heat_kwh, day.ti - prev.ti, prev.length_h)
+        # standby once per day, whether or not the day also yields a COP sample
+        self.cop_learner.update_standby(day.standby_w)
         if day.heating_ext_kwh is not None and self.cop_learner.update_day(
-            day.to, day.heat_kwh, day.heating_ext_kwh, day.standby_w, day.length_h, self.cfg.standby_w
+            day.to, day.heat_kwh, day.heating_ext_kwh, None, day.length_h, self.cfg.standby_w
         ):
             self.cop_curve, self._cop_bins_learned = self.cop_learner.curve()
-        elif day.standby_w is not None:
-            self.cop_learner.update_day(day.to, 0.0, 0.0, day.standby_w)  # standby only
 
     @staticmethod
     def _calling(s: ValidatedSnapshot, hz: float | None) -> bool:
@@ -414,15 +414,7 @@ class ShadowEngine:
             ("error statistics", lambda: self._load_errors(d)),
             ("setpoint profile", lambda: self._load_profile(d)),
             ("pending day", lambda: self._load_pending_day(d)),
-            ("meter counters", lambda: self._load_counters(d)),
-            (
-                "current hour",
-                lambda: self.hours.load_dict(dict(d["hour_acc"]), _zone(d)) if "hour_acc" in d else None,
-            ),
-            (
-                "current day",
-                lambda: self.days.load_dict(dict(d["day_acc"]), _zone(d)) if "day_acc" in d else None,
-            ),
+            ("energy accounting", lambda: self._load_accounting(d)),
         ]
         for name, fn in sections:
             try:
@@ -495,12 +487,32 @@ class ShadowEngine:
         )
         self.pending_day = rec
 
-    def _load_counters(self, d: dict[str, Any]) -> None:
+    def _load_accounting(self, d: dict[str, Any]) -> None:
+        """Counter baselines, the in-progress hour and the current date's hours, restored all-or-nothing.
+
+        They describe one accounting state: restoring baselines without the hour that already contains
+        their increments (or the reverse) would silently drop or double energy. If any part is invalid,
+        none is restored; counters then start new baselines, which marks the affected dates incomplete.
+        """
+        tz = _zone(d)
+        hours, days = HourAccumulator(), DayAggregator()
         last = {str(k): float(v) for k, v in dict(d.get("last_counters") or {}).items()}
         times = {str(k): datetime.fromisoformat(str(v)) for k, v in dict(d.get("counter_time") or {}).items()}
         if not all(math.isfinite(v) for v in last.values()) or any(t.tzinfo is None for t in times.values()):
             raise ValueError("invalid counter baselines")
-        self.hours._last_counter, self.hours.counter_time = last, times
+        if set(times) - set(last):
+            raise ValueError("counter time without baseline")
+        hours._last_counter, hours.counter_time = last, times
+        if "hour_acc" in d:
+            hours.load_dict(dict(d["hour_acc"]), tz)
+        if "day_acc" in d:
+            days.load_dict(dict(d["day_acc"]), tz)
+        acc = hours._acc
+        if acc is not None and days._day is not None and acc.start.date().isoformat() < days._day:
+            raise ValueError("in-progress hour precedes the saved date")
+        if acc is None and days._hours:
+            raise ValueError("saved date without its in-progress hour")
+        self.hours, self.days = hours, days
 
 
 def _zone(d: dict[str, Any]) -> tzinfo | None:

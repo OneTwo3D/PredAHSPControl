@@ -170,8 +170,8 @@ M = [
     (
         "R7-5 restart flag off",
         C + "core/accumulator.py",
-        "                restart = True  # first baseline",
-        "                pass  # first baseline",
+        "a.counter_restart |= new_baseline and not at_midnight",
+        "a.counter_restart |= False",
         CORE,
     ),
     ("R7-B1 no capacity cap", C + "core/predictor.py", "min(plant.q_max_w, ", "max(0.0, ", CORE),
@@ -190,6 +190,37 @@ M = [
         "t - series[i][0] <= self.series_slot",
         CORE,
     ),
+    # "R8-1 accounting restored piecemeal" is equivalent: a rejected state leaves a fresh DayAggregator,
+    # which withholds its first (partial) date anyway, so leaked baselines cannot reach learning.
+    (
+        "R8-2 closing day kept after midnight re-map",
+        C + "core/accumulator.py",
+        "                old.counter_restart = True",
+        "                pass",
+        CORE,
+    ),
+    (
+        "R8-3 unknown heating switch treated as on",
+        C + "core/telemetry.py",
+        "            and Role.HEATING_ENABLED not in self.issues\n",
+        "",
+        CORE,
+    ),
+    (
+        "R8-4 standby learned twice",
+        C + "core/engine.py",
+        "day.heating_ext_kwh, None, day.length_h",
+        "day.heating_ext_kwh, day.standby_w, day.length_h",
+        CORE,
+    ),
+    (
+        "R8-B1 start state from compressor",
+        C + "core/engine.py",
+        "running0=self._calling(s, s.get(Role.HZ)),",
+        "running0=bool(s.get(Role.HZ)),",
+        CORE,
+    ),
+    ("R8-B2 standby over 24 h", C + "core/cop_learner.py", "sb * day_h / 1000.0", "sb * 24.0 / 1000.0", CORE),
 ]
 only = sys.argv[1:]
 res = []

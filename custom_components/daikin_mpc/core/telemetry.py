@@ -117,6 +117,8 @@ class ValidatedSnapshot:
         return (
             all(r in self.values for r in REQUIRED_ROLES if r is not Role.HEARTBEAT)
             and Role.HEARTBEAT not in self.issues
+            # optional, but once mapped it decides whether heating can run at all: unknown is not "on"
+            and Role.HEATING_ENABLED not in self.issues
         )
 
     def get(self, role: Role) -> float | None:

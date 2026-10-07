@@ -5,6 +5,31 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.7] - 2026-10-07
+
+Eighth review round (Codex): 4 code defects, 2 test gaps, and the finding that the restart/day
+completeness logic was still a set of patches. See `docs/review_2026-10.md`.
+
+### Changed — energy accounting now follows two explicit rules
+- **Restored all-or-nothing:** meter baselines, the in-progress hour and the current date's hours are one
+  accounting state. If any part of the saved state is invalid, none is restored; meters then start new
+  baselines and the affected date is not used for learning (previously a rejected hour could leave a day
+  with missing energy that was still learned from).
+- **A date counts only if every meter was observed continuously from its start to its end:** a meter
+  starting a new baseline (first reading, re-mapping, lost state) invalidates the date it falls in,
+  unless exactly at midnight, and also the previous date when midnight passed since the last sample
+  (re-mapping exactly at midnight previously left the ending day "complete" without its last 5 minutes).
+
+### Fixed
+- A mapped heating switch that is unavailable no longer counts as "heating on": telemetry is reported
+  incomplete and no heating forecast or recommendation is made until it is readable again.
+- Standby power is learned once per day (it was updated twice on days without a COP sample).
+
+### Tests
+- New tests: recommendation start state follows the thermostat demand signal; standby subtracted for the
+  actual 23/25-hour day length; plus regression tests for each fix. `tools/mutation_check.py`: 32
+  mutations, all caught (one more retired as equivalent, with the reason in the script).
+
 ## [0.4.6] - 2026-10-07
 
 Seventh review round (Codex): 5 code defects, 4 test gaps, see `docs/review_2026-10.md`.
