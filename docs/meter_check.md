@@ -62,3 +62,23 @@ Daikin heating counter 803 kWh (+5 %). The integration therefore learns COP from
 
 Originally proposed independent check: DHW cycles, where the tank heat gain (volume × 4.18 kJ/kg·K × ΔT of R5T) can be
 compared with both heat measurements. Needs the cylinder volume.
+
+## Battery round-trip efficiency (Solis, 1 Sep 2025 – 7 Oct 2026)
+
+Hourly long-term statistics; the Solis daily counters (0.1 kWh) are used. Night windows have no PV
+(the GoodWe and the 900 W micro-inverter are PV-only and AC-coupled, producing nothing at night).
+
+| Quantity | Value |
+|---|---|
+| Battery counters, whole period | charged 5,140 kWh, discharged 4,799 kWh, SOC change +0.5 kWh → **0.934** |
+| Grid charging 00:00–05:00 (188 nights) | AC in (import − export − house load) 2,705 kWh vs battery-charge counter 2,715 kWh → **1.00** (the charge counter is effectively on the AC side) |
+| Evening discharge 17:00–24:00 (176 evenings, no PV) | battery-discharge counter 1,308 kWh → AC delivered 1,272 kWh → **0.973** |
+| **AC → battery → AC round trip** | 1.00 × 0.934 × 0.973 ≈ **0.91** |
+| Predbat setting (`battery_loss` 0.03, `battery_loss_discharge` 0.03, `inverter_loss` 0.03) | 0.97⁴ = **0.885** |
+| Inverter idle consumption (no PV, battery idle) | ≈ 0 W (−8 W, within counter noise) |
+
+Predbat's assumption is ≈ 3 % pessimistic. The discharge conversion (0.973) matches `inverter_loss`
+0.03, so keep that (it is also used for PV conversion) and lower the battery losses:
+`battery_loss: 0.015`, `battery_loss_discharge: 0.015` → 0.97² × 0.985² ≈ 0.913. Caveat: the battery-counter
+ratio mixes grid-charged and PV-charged energy (PV charging avoids one AC conversion), so the grid-only round
+trip may be ≈ 1 % lower; the suggested values are still within that range.
