@@ -30,9 +30,9 @@ from __future__ import annotations
 import bisect
 import math
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from .timeutil import add_hours
+from .timeutil import add_hours, elapsed_s
 
 DEFAULT_TARIFF = "00:00-05:00=7.6, 05:00-24:00=34.87"
 # 12p fixed export with Predbat's -10p night override in apps.yaml (00:00-05:00)
@@ -159,27 +159,39 @@ class CostProvider:
     def charge_rate(self, t: datetime) -> float:
         """Cheapest import rate in force at any time in the 24 h before ``t`` (when the battery was charged).
 
-        Evaluated at every rate change in that window, so short slots are never missed. Each instant uses
-        the rate that applies then: Predbat's where its series covers it, the fixed tariff otherwise, so
-        an expired series cannot set the price and the fallback's cheap rate is not used where Predbat's
-        is known.
+        Evaluated at the window start and at every rate change inside it, so short slots are never
+        missed. Each instant uses the rate that applies then: Predbat's where its series covers it, the
+        fixed tariff otherwise, so an expired series cannot set the price and the fallback's cheap rate is
+        not used where Predbat's is known. Window membership is decided in elapsed (UTC) time, and local
+        tariff boundaries are taken in both folds of a repeated autumn hour and skipped when they do not
+        exist (spring gap).
         """
         start = add_hours(t, -24.0)
+
+        def inside(x: datetime) -> bool:
+            return elapsed_s(start, x) >= 0 and elapsed_s(x, t) > 0
+
         instants = [start]
         if self.series:
-            instants += [x for x in self._times if start <= x < t]
+            instants += [x for x in self._times if inside(x)]
             end = add_hours(self._times[-1], self.series_slot.total_seconds() / 3600)
-            if start <= end < t:
+            if inside(end):
                 instants.append(end)  # the fixed tariff takes over where the series ends
-        # boundaries of the fixed tariff periods (local time) on each date the window touches
         tz = t.tzinfo
-        d = start.date()
+        d = start.date() - timedelta(days=1)
         while d <= t.date():
             for p in self.tariff:
-                if p.start_min < 1440:
-                    hh, mm = divmod(p.start_min, 60)
-                    x = datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz)
-                    if start <= x < t:
+                if p.start_min >= 1440:
+                    continue
+                hh, mm = divmod(p.start_min, 60)
+                for fold in (0, 1):
+                    x = datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz, fold=fold)
+                    if tz is not None:
+                        back = x.astimezone(UTC).astimezone(tz)
+                        if (back.hour, back.minute) != (hh, mm):
+                            continue  # does not exist (clocks went forward)
+                        x = back
+                    if inside(x):
                         instants.append(x)
             d += timedelta(days=1)
         return min(self.tariff_rate(x) for x in instants)

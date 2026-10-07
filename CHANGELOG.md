@@ -5,6 +5,30 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.4.5] - 2026-10-07
+
+Sixth review round (Codex): 5 code defects and 12 test-suite gaps, see `docs/review_2026-10.md`.
+
+### Fixed
+- After a restart, a first day that was incomplete (integration started mid-day) stayed eligible for
+  learning; the "first day partial" state is now saved. A fresh start during the midnight hour (e.g.
+  00:30) no longer counts as a complete day: energy must have been observed from the hour's start.
+- A restart late on a clock-change day no longer turns its 25/23-hour length into 24 hours (the day's
+  time zone is taken from live data, not from restored timestamps).
+- Battery charging price around clock changes: a cheap slot in the non-existent spring hour is no longer
+  counted, and the repeated autumn hour is checked in both its BST and GMT occurrences.
+- Restored hour records without temperature means are rejected instead of crashing the next day's
+  aggregation.
+
+### Tests
+- New tests close the gaps found by the review: stale recommendation cleared and re-planned on recovery,
+  optimiser throttle and retry after failure, startup before entities exist, unit conversion end to end,
+  comfort-period option validation, plan times and diagnostics, WebSocket redirect refusal, full engine
+  state round-trip, clock-change days through the engine (incl. restarts), cost = energy × price, Predbat
+  timestamp offsets, heating switched off through the engine, offline outdoor-temperature coverage.
+- `tools/mutation_check.py`: re-introduces each of 20 fixed defects/gaps and confirms a test fails — all
+  20 are caught.
+
 ## [0.4.4] - 2026-10-07
 
 Fifth review round (Codex, 3 findings on 0.4.3), see `docs/review_2026-10.md`.

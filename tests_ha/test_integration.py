@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant import config_entries
 from homeassistant.const import EVENT_CALL_SERVICE
-from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
@@ -45,26 +45,6 @@ STATES = {
 def _set_states(hass: HomeAssistant) -> None:
     for e, v in STATES.items():
         hass.states.async_set(e, v)
-
-
-@pytest.fixture
-def weather_calls(hass: HomeAssistant):
-    calls = []
-
-    async def handler(call) -> ServiceResponse:
-        calls.append(call)
-        now = dt_util.utcnow()
-        return {
-            "weather.forecast_home": {
-                "forecast": [
-                    {"datetime": (now + timedelta(hours=h)).isoformat(), "temperature": 5.0 - 0.1 * h}
-                    for h in range(1, 49)
-                ]
-            }
-        }
-
-    hass.services.async_register("weather", "get_forecasts", handler, supports_response=SupportsResponse.ONLY)
-    return calls
 
 
 async def test_config_flow_prefills_and_creates_entry(hass: HomeAssistant) -> None:
