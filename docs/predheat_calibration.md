@@ -1,5 +1,31 @@
 # Predheat calibration (offline, winter 2025/26)
 
+> **Correction (8 Oct 2026) — supersedes `heat_loss_degrees` 0.0315 and `heat_cop` 3.81 below.** Free-cooling
+> nights show the building time constant is ≈ 60 h, not 32 h (C ≈ 5.5 kWh/K, see `docs/capacity_learning.md`);
+> the winter daily balance had under-estimated C. Replay over 150 winter days (`tools/predheat_replay.py`
+> functions, all days):
+>
+> | Set | Elec MAE | Elec bias | Room MAE @6 h | @24 h |
+> |---|---|---|---|---|
+> | current (156, 0.0194, gains 400, COP 3.68) | 0.85 | +0.24 | 0.66 | 2.53 |
+> | earlier advice (94, 0.0315, 440, 3.81) | 0.91 | −0.27 | 0.78 | 1.10 |
+> | 94, 0.0171 (C 5.5), COP 3.81 | 1.12 | −0.82 | 0.36 | 1.11 |
+> | **recommended: 94, 0.0171, 440, COP 3.2** | **0.82** | **+0.04** | **0.36** | **1.11** |
+>
+> With the correct C the room forecast halves its 6 h error, but Predheat then under-predicts electricity
+> (its structure lacks RT modulation and the circulation pump/standby inside the COP); `heat_cop` 3.2 is an
+> empirical calibration of the energy level (lower gains or higher `heat_min_power` worsened the room
+> forecast without removing the bias). Recommended `predheat:` values:
+>
+> ```yaml
+>     heat_loss_watts: 94
+>     heat_loss_degrees: 0.0171
+>     heat_gain_static: 440
+>     heat_min_power: 680
+>     heat_cop: 3.2
+> ```
+> (keep the `heat_pump_efficiency` table, `flow_difference_target` 5 and `hysteresis` 1.0 / 1.0).
+
 > **Update (M1):** the values below were validated by replaying Predheat over 150 winter days
 > (`tools/predheat_replay.py`, report in `docs/predheat_replay_report.md`). The **recommended values are
 > the "fitted" set in that report**, which supersede the first-pass table below where they differ
