@@ -197,7 +197,13 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
         value_fn=lambda s: round(s.c_kwh, 3),
-        attrs_fn=lambda s: {"std_dev": round(s.sd["c_kwh"], 3)},
+        attrs_fn=lambda s: {
+            "std_dev": round(s.sd["c_kwh"], 3),
+            "source": s.c_source,
+            "time_constant_h": s.tau_h,
+            "free_cooling_nights": s.capacity_nights,
+            "free_cooling_hours": s.capacity_pairs,
+        },
     ),
     MpcSensorDescription(
         key="internal_gain",

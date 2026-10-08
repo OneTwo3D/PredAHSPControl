@@ -51,7 +51,7 @@ SUGGESTED: Final[dict[str, str]] = {
     CONF_PREDHEAT_H8: "predheat.internal_temp_h8",
 }
 
-DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 440.0, CONF_C: 3.0}
+DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 440.0, CONF_C: 5.5}
 
 # M3 shadow optimiser
 CONF_ROOM_MIN: Final = "room_min_c"

@@ -277,6 +277,48 @@ M = [
         "if len(off) >= 1:",
         CORE,
     ),
+    (
+        "C-1 mild nights accepted",
+        C + "core/capacity_learner.py",
+        "if pair is None or pair[0] < self.min_dt_k:",
+        "if pair is None:",
+        CORE,
+    ),
+    (
+        "C-2 any hour of day",
+        C + "core/capacity_learner.py",
+        "if h0.start.hour not in NIGHT_START_HOURS:",
+        "if False:",
+        CORE,
+    ),
+    (
+        "C-3 no forgetting",
+        C + "core/capacity_learner.py",
+        "lam = self.forgetting_per_day**days",
+        "lam = 1.0",
+        CORE,
+    ),
+    (
+        "C-4 hour before not checked",
+        C + "core/capacity_learner.py",
+        "        for h in hours:\n",
+        "        for h in (h0, h1):\n",
+        CORE,
+    ),
+    (
+        "C-5 estimate not applied",
+        C + "core/engine.py",
+        "self.learner.set_capacity(est.c_wh_per_k, est.sd_wh_per_k)",
+        "False",
+        CORE,
+    ),
+    (
+        "C-6 stale priors kept",
+        C + "core/engine.py",
+        "            self.learner = self._new_learner()\n",
+        "            pass\n",
+        CORE,
+    ),
 ]
 only = sys.argv[1:]
 res = []

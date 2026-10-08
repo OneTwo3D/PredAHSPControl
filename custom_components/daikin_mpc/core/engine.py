@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import numpy as np
 
 from .accumulator import DayAggregator, DayRecord, HourAccumulator, HourRecord
+from .capacity_learner import CapacityEstimate, CapacityLearner
 from .cop_learner import CopLearner
 from .cost_model import CostProvider, TariffPeriod, period_value
 from .emitter_model import RadiatorParams
@@ -39,7 +40,9 @@ class EngineConfig:
 
     ua_w_per_k: float = 94.0
     gains_w: float = 440.0
-    c_wh_per_k: float = 3000.0
+    # free-cooling nights 2025/26 (time constant ≈ 59 h at UA 94); the winter daily balance gave
+    # 3.0 ± 0.8 but identifies C poorly. Refined online by the capacity learner.
+    c_wh_per_k: float = 5500.0
     prior_sd: tuple[float, float, float] = (10.0, 80.0, 1500.0)
     radiator_k: float = 63.1
     radiator_n: float = 1.3
@@ -103,6 +106,10 @@ class EngineStatus:
     cop_learned_days: int = 0
     recommendation: Recommendation | None = None
     cost_source: str = ""
+    c_source: str = "prior"
+    capacity_nights: int = 0
+    capacity_pairs: float = 0.0
+    tau_h: float | None = None
 
 
 @dataclass
@@ -118,9 +125,10 @@ class ShadowEngine:
 
     def __post_init__(self) -> None:
         c = self.cfg
-        self.learner = BuildingLearner(
-            ThermalParams(c.ua_w_per_k, c.c_wh_per_k, c.gains_w), c.prior_sd, LearnerConfig()
-        )
+        self.learner = self._new_learner()
+        self.capacity = CapacityLearner()
+        self.capacity_estimate: CapacityEstimate | None = None
+        self._recent_hours: list[HourRecord] = []
         self.plant = PlantParams(
             RadiatorParams(c.radiator_k, c.radiator_n), c.q_min_w, c.q_max_w, min_lwt_c=c.min_lwt_c
         )
@@ -143,6 +151,22 @@ class ShadowEngine:
         self._last_forecast_hour: datetime | None = None
 
     # --- helpers ---------------------------------------------------------------------------
+    def _new_learner(self) -> BuildingLearner:
+        c = self.cfg
+        return BuildingLearner(
+            ThermalParams(c.ua_w_per_k, c.c_wh_per_k, c.gains_w), c.prior_sd, LearnerConfig()
+        )
+
+    def _on_hour(self, h: HourRecord) -> None:
+        """Feed consecutive hours to the free-cooling capacity learner; C follows its estimate."""
+        self._recent_hours = [*self._recent_hours, h][-3:]
+        if not self.cfg.learning_enabled or len(self._recent_hours) < 3:
+            return
+        if self.capacity.add(*self._recent_hours):
+            est = self.capacity.estimate(self.learner.params.ua_w_per_k)
+            if est is not None and self.learner.set_capacity(est.c_wh_per_k, est.sd_wh_per_k):
+                self.capacity_estimate = est
+
     def cop(self, to_c: float) -> float:
         return self.cop_curve.at(to_c)[0]
 
@@ -178,6 +202,7 @@ class ShadowEngine:
         for h in self.hours.add(s):
             self.last_hour = h
             self.class_counts[h.cls] += 1
+            self._on_hour(h)
             day = self.days.add(h)
             if day is not None:
                 self._on_day(day)
@@ -281,6 +306,14 @@ class ShadowEngine:
             standby_w=self.standby_w,
             cop_source=f"learned ({self._cop_bins_learned} bins)" if self._cop_bins_learned else "prior",
             cop_learned_days=self.cop_learner.days,
+            c_source=(
+                f"free-cooling nights ({self.capacity_estimate.nights})"
+                if self.capacity_estimate is not None
+                else ("prior + daily balance" if self.learner.updates else "prior")
+            ),
+            capacity_nights=self.capacity.nights,
+            capacity_pairs=round(self.capacity.n, 1),
+            tau_h=round(self.capacity_estimate.tau_h, 1) if self.capacity_estimate is not None else None,
         )
 
     @property
@@ -394,6 +427,7 @@ class ShadowEngine:
             "tz": getattr(self._tz, "key", None),  # named zone (e.g. Europe/London) for restored times
             "day_acc": self.days.to_dict(),
             "cop_learner": self.cop_learner.to_dict(),
+            "capacity": self.capacity.to_dict(),
         }
 
     def load_dict(self, d: dict[str, Any]) -> list[str]:
@@ -409,6 +443,18 @@ class ShadowEngine:
             ok = False
         if not ok:
             warn.append("learner state invalid; using priors")
+        if "capacity" in d:
+            try:
+                cap_ok = self.capacity.load_dict(dict(d["capacity"]))
+            except Exception:
+                cap_ok = False
+            if not cap_ok:
+                self.capacity = CapacityLearner()
+                warn.append("capacity learner state invalid; starting again")
+        self.capacity_estimate = self.capacity.estimate(self.learner.params.ua_w_per_k)
+        if ok and self.learner.updates == 0 and self.capacity_estimate is None:
+            # nothing learned yet: the configured priors (which may have changed) apply
+            self.learner = self._new_learner()
         sections: list[tuple[str, Any]] = [
             ("class counts", lambda: self._load_counts(d)),
             ("error statistics", lambda: self._load_errors(d)),

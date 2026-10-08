@@ -99,6 +99,21 @@ class BuildingLearner:
         self.last_reason = "accepted"
         return UpdateResult(True, "accepted", resid)
 
+    def set_capacity(self, c_wh_per_k: float, sd_wh_per_k: float) -> bool:
+        """Take C from a better-identified source (free-cooling nights), replacing the daily estimate.
+
+        The daily balance identifies C poorly; the night estimate becomes authoritative for it. C's
+        covariance with UA and gains is reset (they come from different data).
+        """
+        lo, hi = self.cfg.bounds["c"]
+        if not (math.isfinite(c_wh_per_k) and math.isfinite(sd_wh_per_k) and sd_wh_per_k > 0):
+            return False
+        self.theta[2] = float(np.clip(c_wh_per_k, lo, hi))
+        self.p[2, :] = 0.0
+        self.p[:, 2] = 0.0
+        self.p[2, 2] = sd_wh_per_k**2
+        return True
+
     def _reject(self, reason: str, resid: float = float("nan")) -> UpdateResult:
         self.rejected += 1
         self.last_reason = reason

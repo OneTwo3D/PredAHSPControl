@@ -5,6 +5,23 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.5.0] - 2026-10-08
+
+### Added
+- **Thermal capacity learned from free-cooling nights.** With the heat pump off, the night-time cooling
+  rate measures the building's time constant directly; with UA from the daily learner this gives C. Clean
+  night hours only (22:00–06:00, compressor off, no hot water, indoor–outdoor difference ≥ 6 K), ≈ 50-day
+  memory; used once at least 4 nights identify it. The *Thermal capacity* sensor shows the source, the
+  time constant and the number of nights. See `docs/capacity_learning.md`.
+
+### Changed
+- Default thermal capacity **5.5 kWh/K** (was 3.0): with heating off, the model cooled the house about
+  twice as fast as it really cools (time constant 32 h vs ≈ 60 h in last winter's no-heating nights).
+  **If you ever saved the options, set "Thermal capacity" to 5.5 there** (Daikin MPC → Configure).
+- Changed defaults/options now apply while nothing has been learned yet (previously the first saved state
+  kept the old values).
+- M3 replay with the new capacity: optimised vs simple timer +28 % on the raw tariff (was +17 %).
+
 ## [0.4.8] - 2026-10-07
 
 Ninth review round (Codex) — attacks on the two accounting rules of 0.4.7: 3 defects, 4 test gaps; no
