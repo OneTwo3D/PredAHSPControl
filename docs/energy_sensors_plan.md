@@ -109,10 +109,12 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
 7. **Integration v0.6.0**: map `HOUSE_W`, switch battery gains to measured Solis losses, finish
    Option B (household factor from clean data).
 
-## 6. Open points
+## 6. Decisions (10 Oct 2026)
 
-* Keep or retire PredAI?
-* The `ashp_heating/dhw_power_consumption_*` templates are YAML (not readable via the API): paste
-  them, or confirm they can be replaced by the new split.
-* DHW signal for the split: `binary_sensor.bridge0_dhw_dhw_demand` vs the 3-way valve sensor — to be
-  checked against the meter in phase A.
+* PredAI is **retired** (its forecast was not used by Predbat); remove the add-on and
+  `sensor.total_house_consumption_prediction`.
+* The YAML templates `ashp_{heating,dhw}_power_consumption_*` are **replaced** by utility meters on
+  the metered split (`heat_pump_{heating,dhw}_energy_*`; renamed to the ashp_* IDs in phase B).
+* DHW split signal: `binary_sensor.bridge0_dhw_dhw_demand` (the 3-way valve rests on "tank" when
+  idle, so it cannot separate DHW from standby). 4–10 Oct: 6.8 kWh DHW, 2.3 kWh standby.
+* Phase A package: `docs/ha/packages/energy.yaml` (all templates rendered live without errors).

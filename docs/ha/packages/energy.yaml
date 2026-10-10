@@ -1,0 +1,280 @@
+# Canonical energy sensors — PHASE A (new sensors only; nothing existing is changed)
+# Plan and rationale: docs/energy_sensors_plan.md
+#
+# Install:
+#   1. configuration.yaml:   homeassistant:
+#                              packages: !include_dir_named packages
+#   2. copy this file to /config/packages/energy.yaml
+#   3. Developer tools → YAML → Check configuration, then restart Home Assistant.
+#
+# Sign conventions: grid + = import; Solis AC + = inverter delivering to the house (− = charging from
+# the grid); battery + = discharging; generation and loads ≥ 0.
+#
+# The four sensors ending in "_new" are the replacements for the faulty helpers solis_power,
+# pv_power, house_power and total_house_consumption. Phase B (after 3–7 days of comparison) gives
+# them the old entity IDs; until then the old helpers stay untouched.
+
+template:
+  - sensor:
+      # --- power (W) ---------------------------------------------------------------------------
+      - name: "Grid power"
+        unique_id: energy_grid_power_new
+        default_entity_id: sensor.solis_power_new
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # Glow/Hildebrand smart meter; Solis CT (≈ −0.94 × smart meter + 53 W) only as fallback.
+        state: >
+          {% set sm = states('sensor.smart_meter_electricity_power') %}
+          {% if is_number(sm) %}{{ sm | float | round(0) }}
+          {% else %}{{ ((53 - states('sensor.solis_meter_active_power') | float) / 0.94) | round(0) }}
+          {% endif %}
+        availability: >
+          {{ is_number(states('sensor.smart_meter_electricity_power'))
+             or is_number(states('sensor.solis_meter_active_power')) }}
+
+      - name: "PV power"
+        unique_id: energy_pv_power_new
+        default_entity_id: sensor.pv_power_new
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # Solis PV (DC, garage) + roof GW2000 (HomeWizard meter, export negative) + shed micro-inverter
+        state: >
+          {{ (states('sensor.solis_pv_total_power') | float(0)
+              + [0, -(states('sensor.kwh_meter_power_2') | float(0))] | max
+              + states('sensor.shed_power_ac') | float(0)) | round(0) }}
+        availability: >
+          {{ is_number(states('sensor.solis_pv_total_power'))
+             and is_number(states('sensor.kwh_meter_power_2')) }}
+
+      - name: "House power"
+        unique_id: energy_house_power_new
+        default_entity_id: sensor.house_power_new
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # AC side: grid + Solis AC output + roof (net, incl. its standby) + shed.
+        # Excludes the Solis conversion/standby losses (see solis_loss_power).
+        state: >
+          {% set grid = states('sensor.solis_power_new') | float(0) %}
+          {% set solis = states('sensor.solis_active_power') | float(0) %}
+          {% set roof = -(states('sensor.kwh_meter_power_2') | float(0)) %}
+          {% set shed = states('sensor.shed_power_ac') | float(0) %}
+          {{ [grid + solis + roof + shed, 0] | max | round(0) }}
+        availability: >
+          {{ has_value('sensor.solis_power_new')
+             and is_number(states('sensor.solis_active_power'))
+             and is_number(states('sensor.kwh_meter_power_2')) }}
+
+      - name: "Solis loss power"
+        unique_id: energy_solis_loss_power
+        default_entity_id: sensor.solis_loss_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # Conversion + standby losses of the Solis (inside the house): PV + battery − AC output.
+        state: >
+          {{ [states('sensor.solis_pv_total_power') | float(0)
+              + states('sensor.battery_power') | float(0)
+              - states('sensor.solis_active_power') | float(0), 0] | max | round(0) }}
+        availability: >
+          {{ is_number(states('sensor.solis_pv_total_power'))
+             and is_number(states('sensor.battery_power'))
+             and is_number(states('sensor.solis_active_power')) }}
+
+      - name: "Heat pump power"
+        unique_id: energy_heat_pump_power
+        default_entity_id: sensor.heat_pump_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ [states('sensor.kwh_meter_power') | float(0), 0] | max | round(0) }}"
+        availability: "{{ is_number(states('sensor.kwh_meter_power')) }}"
+
+      # Split of the metered heat-pump power. The 3-way valve rests on "tank" when idle, so the
+      # DHW demand signal is used (4–10 Oct 2026: 6.8 kWh DHW, 2.3 kWh standby, heating ≈ 0).
+      - name: "Heat pump DHW power"
+        unique_id: energy_heat_pump_dhw_power
+        default_entity_id: sensor.heat_pump_dhw_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {{ states('sensor.heat_pump_power') | float(0)
+             if is_state('binary_sensor.bridge0_dhw_dhw_demand', 'on') else 0 }}
+        availability: >
+          {{ has_value('sensor.heat_pump_power')
+             and has_value('binary_sensor.bridge0_dhw_dhw_demand') }}
+
+      - name: "Heat pump heating power"
+        unique_id: energy_heat_pump_heating_power
+        default_entity_id: sensor.heat_pump_heating_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # space heating: compressor or circulation pump running without DHW demand (incl. defrost)
+        state: >
+          {% set running = is_state('binary_sensor.bridge0_mode_compressor', 'on')
+                           or is_state('binary_sensor.bridge0_mode_circulation_pump', 'on') %}
+          {{ states('sensor.heat_pump_power') | float(0)
+             if running and not is_state('binary_sensor.bridge0_dhw_dhw_demand', 'on') else 0 }}
+        availability: >
+          {{ has_value('sensor.heat_pump_power')
+             and has_value('binary_sensor.bridge0_dhw_dhw_demand')
+             and has_value('binary_sensor.bridge0_mode_compressor')
+             and has_value('binary_sensor.bridge0_mode_circulation_pump') }}
+
+      - name: "Heat pump standby power"
+        unique_id: energy_heat_pump_standby_power
+        default_entity_id: sensor.heat_pump_standby_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {{ [states('sensor.heat_pump_power') | float(0)
+              - states('sensor.heat_pump_dhw_power') | float(0)
+              - states('sensor.heat_pump_heating_power') | float(0), 0] | max }}
+        availability: >
+          {{ has_value('sensor.heat_pump_dhw_power') and has_value('sensor.heat_pump_heating_power') }}
+
+      - name: "House power excl. heating"
+        unique_id: energy_house_power_excl_heating
+        default_entity_id: sensor.house_power_excl_heating
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # household load for Predbat/Predheat: space heating removed, DHW and standby kept
+        state: >
+          {{ [states('sensor.house_power_new') | float(0)
+              - states('sensor.heat_pump_heating_power') | float(0), 0] | max }}
+        availability: >
+          {{ has_value('sensor.house_power_new') and has_value('sensor.heat_pump_heating_power') }}
+
+      - name: "House power excl. heat pump"
+        unique_id: energy_house_power_excl_heat_pump
+        default_entity_id: sensor.house_power_excl_heat_pump
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {{ [states('sensor.house_power_new') | float(0)
+              - states('sensor.heat_pump_power') | float(0), 0] | max }}
+        availability: >
+          {{ has_value('sensor.house_power_new') and has_value('sensor.heat_pump_power') }}
+
+# --- energy (kWh): integrals of the power sensors ---------------------------------------------
+sensor:
+  - platform: integration
+    source: sensor.house_power_new
+    name: House energy total
+    unique_id: energy_house_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    source: sensor.house_power_excl_heating
+    name: House energy excl heating total
+    unique_id: energy_house_energy_excl_heating_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    source: sensor.solis_loss_power
+    name: Solis loss energy total
+    unique_id: energy_solis_loss_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    source: sensor.heat_pump_dhw_power
+    name: Heat pump DHW energy total
+    unique_id: energy_heat_pump_dhw_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    source: sensor.heat_pump_heating_power
+    name: Heat pump heating energy total
+    unique_id: energy_heat_pump_heating_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    source: sensor.heat_pump_standby_power
+    name: Heat pump standby energy total
+    unique_id: energy_heat_pump_standby_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+
+# --- daily / periodic counters ------------------------------------------------------------------
+utility_meter:
+  total_house_consumption_new:
+    unique_id: energy_total_house_consumption_new
+    source: sensor.house_energy_total
+    cycle: daily
+  house_load_excl_heating_daily:
+    unique_id: energy_house_load_excl_heating_daily
+    source: sensor.house_energy_excl_heating_total
+    cycle: daily
+  solis_loss_energy_daily:
+    unique_id: energy_solis_loss_energy_daily
+    source: sensor.solis_loss_energy_total
+    cycle: daily
+  # Replacements for the broken YAML templates ashp_{heating,dhw}_power_consumption_* (phase B
+  # renames these keys to the ashp_* names after the old templates are removed).
+  heat_pump_dhw_energy_daily:
+    unique_id: energy_heat_pump_dhw_energy_daily
+    source: sensor.heat_pump_dhw_energy_total
+    cycle: daily
+  heat_pump_dhw_energy_weekly:
+    unique_id: energy_heat_pump_dhw_energy_weekly
+    source: sensor.heat_pump_dhw_energy_total
+    cycle: weekly
+  heat_pump_dhw_energy_monthly:
+    unique_id: energy_heat_pump_dhw_energy_monthly
+    source: sensor.heat_pump_dhw_energy_total
+    cycle: monthly
+  heat_pump_dhw_energy_annually:
+    unique_id: energy_heat_pump_dhw_energy_annually
+    source: sensor.heat_pump_dhw_energy_total
+    cycle: yearly
+  heat_pump_heating_energy_daily:
+    unique_id: energy_heat_pump_heating_energy_daily
+    source: sensor.heat_pump_heating_energy_total
+    cycle: daily
+  heat_pump_heating_energy_weekly:
+    unique_id: energy_heat_pump_heating_energy_weekly
+    source: sensor.heat_pump_heating_energy_total
+    cycle: weekly
+  heat_pump_heating_energy_monthly:
+    unique_id: energy_heat_pump_heating_energy_monthly
+    source: sensor.heat_pump_heating_energy_total
+    cycle: monthly
+  heat_pump_heating_energy_annually:
+    unique_id: energy_heat_pump_heating_energy_annually
+    source: sensor.heat_pump_heating_energy_total
+    cycle: yearly
+  heat_pump_standby_energy_daily:
+    unique_id: energy_heat_pump_standby_energy_daily
+    source: sensor.heat_pump_standby_energy_total
+    cycle: daily
