@@ -7,7 +7,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from custom_components.daikin_mpc.core.accumulator import DayRecord, HourRecord
+from custom_components.daikin_mpc.core.accumulator import (
+    DayAggregator,
+    DayRecord,
+    HourAccumulator,
+    HourRecord,
+)
 from custom_components.daikin_mpc.core.capacity_learner import CapacityLearner
 from custom_components.daikin_mpc.core.engine import EngineConfig, ShadowEngine
 from custom_components.daikin_mpc.core.gains import (
@@ -226,6 +231,7 @@ def test_unreleased_version_1_state_is_not_loaded():
     [
         {"version": 99},
         {"household": {"24": 1.0}},
+        {"inverter": {"24": 1.0}},
         {"household": {"-1": 1.0}},
         {"inverter": {"3": -1.0}},
         {"inverter": {"3": "nan"}},
@@ -532,3 +538,18 @@ def test_pv_at_across_the_spring_clock_change():
     assert pv_at(pv, datetime(2026, 3, 29, 3, 0, tzinfo=LON)) is None
     assert pv_at(pv, datetime(2026, 3, 29, 1, 30, tzinfo=UTC)) == 500.0
     assert t.utcoffset() is not None
+
+
+def test_day_coverage_counts_hours_without_a_gains_record_as_uncovered():
+    """Hours from before a source was configured (no "gains_ok") lower the day's coverage."""
+    acc, days = HourAccumulator(), DayAggregator()
+    recs = []
+    for i in range(12 * 30):  # 30 hours of 5-min samples; gains configured from the 12th hour on
+        t = T0.replace(hour=0) + timedelta(minutes=5 * i)
+        extras = {"gains_ok": 1.0, "gains_w": 100.0} if i >= 12 * 12 else None
+        for h in acc.add(full(t, heat_kwh=100 + i * 0.1), extras):
+            if d := days.add(h):
+                recs.append(d)
+    assert len(recs) == 1
+    assert recs[0].gains_coverage == pytest.approx(0.5, abs=0.05)
+    assert recs[0].extra_gains_w == pytest.approx(100.0)
