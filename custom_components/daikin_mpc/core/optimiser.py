@@ -73,6 +73,7 @@ class PlanInputs:
     rate_p: Sequence[float]  # per step, marginal pence/kWh
     baseline_setpoint_c: Sequence[float]  # per hour, what the native schedule would do
     target_c: Sequence[float | None] | None = None  # per step, soft comfort target (None = none)
+    extra_gains_w: Sequence[float] | None = None  # per step, gains beyond the building's base gains
 
 
 @dataclass
@@ -139,8 +140,9 @@ def _simulate_hour(
     dt = cfg.step_h
     for k in range(k0, k0 + n):
         was = running
+        g = inp.extra_gains_w[k] if inp.extra_gains_w is not None else 0.0
         ti, running, q = plant_step(
-            ti, running, inp.to_c[k], sp, inp.lwt_set_c[k], inp.heating_enabled, building, plant, dt
+            ti, running, inp.to_c[k], sp, inp.lwt_set_c[k], inp.heating_enabled, building, plant, dt, g
         )
         e_kwh = q * dt / max(cop(inp.to_c[k]), 1.0) / 1000 if q > 0 else 0.0
         c = e_kwh * inp.rate_p[k]
@@ -170,6 +172,8 @@ def _check_inputs(inp: PlanInputs, cfg: OptimiserConfig) -> int:
     steps = min(len(inp.to_c), len(inp.lwt_set_c), len(inp.rate_p))
     if inp.target_c is not None:
         steps = min(steps, len(inp.target_c))
+    if inp.extra_gains_w is not None:
+        steps = min(steps, len(inp.extra_gains_w))
     hours = min(cfg.horizon_h, steps // per_h)
     if hours < 1:
         raise ValueError("inputs cover less than one hour")

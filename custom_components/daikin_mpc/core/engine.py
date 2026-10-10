@@ -20,6 +20,7 @@ from .capacity_learner import CapacityEstimate, CapacityLearner
 from .cop_learner import CopLearner
 from .cost_model import CostProvider, TariffPeriod, period_value
 from .emitter_model import RadiatorParams
+from .gains import GAIN_ROLES, GainsBreakdown, GainsConfig, GainsForecaster, measured_gains, pv_at
 from .heatpump_model import CopCurve
 from .learner import BuildingLearner, LearnerConfig
 from .optimiser import OptimiserConfig, PlanInputs, Recommendation, recommend
@@ -58,6 +59,7 @@ class EngineConfig:
     min_lwt_c: float = 25.0
     standby_w: float = 19.0  # external meter, compressor off (winter 2025/26)
     learning_enabled: bool = True
+    gains: GainsConfig = field(default_factory=GainsConfig)
 
 
 @dataclass
@@ -106,6 +108,9 @@ class EngineStatus:
     cop_learned_days: int = 0
     recommendation: Recommendation | None = None
     cost_source: str = ""
+    gains_now: GainsBreakdown | None = None
+    gains_sources: tuple[str, ...] = ()
+    solar_ratio: float | None = None
     c_source: str = "prior"
     capacity_nights: int = 0
     capacity_pairs: float = 0.0
@@ -128,6 +133,9 @@ class ShadowEngine:
         self.learner = self._new_learner()
         self.capacity = CapacityLearner()
         self.capacity_estimate: CapacityEstimate | None = None
+        self.gains_fc = GainsForecaster(self.cfg.gains)
+        self.gains_now = GainsBreakdown()
+        self.pv_forecast: list[tuple[datetime, float]] | None = None
         self._recent_hours: list[HourRecord] = []
         self.plant = PlantParams(
             RadiatorParams(c.radiator_k, c.radiator_n), c.q_min_w, c.q_max_w, min_lwt_c=c.min_lwt_c
@@ -184,12 +192,14 @@ class ShadowEngine:
         s: ValidatedSnapshot,
         to_forecast: list[tuple[datetime, float]] | None,
         external_predictions: dict[str, tuple[float, float]] | None = None,
+        pv_forecast: list[tuple[datetime, float]] | None = None,
     ) -> EngineStatus:
         """Process one snapshot.
 
         ``to_forecast``: hourly (time, °C) outdoor forecast, or None.
         ``external_predictions``: other forecasters to score, ``name -> (horizon_h, predicted Ti)``,
         e.g. Predheat's 1 h and 8 h room-temperature forecasts. Issued once per hour.
+        ``pv_forecast``: Solcast PV forecast (period start, W), for future solar gains.
         """
         t = s.time
         if t.tzinfo is not None:
@@ -198,8 +208,15 @@ class ShadowEngine:
         heating_enabled = s.get(Role.HEATING_ENABLED)
         hz = s.get(Role.HZ)
 
+        # 0. measured gains beyond the base gains; profiles for their forecast
+        self.pv_forecast = pv_forecast
+        self.gains_now = measured_gains(s, self.cfg.gains)
+        if self.cfg.learning_enabled:
+            self.gains_fc.learn(s, self._pv_at(t))
+        extras = {"gains_w": self.gains_now.total_w} if self._gain_sources(s) else None
+
         # 1. aggregation and learning
-        for h in self.hours.add(s):
+        for h in self.hours.add(s, extras):
             self.last_hour = h
             self.class_counts[h.cls] += 1
             self._on_hour(h)
@@ -262,6 +279,7 @@ class ShadowEngine:
                 self.plant,
                 self.cop,
                 STEP_H,
+                self._gains_steps(s, t, len(to_steps)),
             )
             self.last_forecast = fc
             hour = hour_key(t)
@@ -306,6 +324,9 @@ class ShadowEngine:
             standby_w=self.standby_w,
             cop_source=f"learned ({self._cop_bins_learned} bins)" if self._cop_bins_learned else "prior",
             cop_learned_days=self.cop_learner.days,
+            gains_now=self.gains_now,
+            gains_sources=self._gain_sources(s),
+            solar_ratio=self.gains_fc.solar_ratio if s.get(Role.SOLAR) is not None else None,
             c_source=(
                 f"free-cooling nights ({self.capacity_estimate.nights})"
                 if self.capacity_estimate is not None
@@ -330,7 +351,9 @@ class ShadowEngine:
         if prev is not None and date.fromisoformat(day.day) - date.fromisoformat(prev.day) == timedelta(
             days=1
         ):
-            self.learner.update_day(prev.ti, prev.to, prev.heat_kwh, day.ti - prev.ti, prev.length_h)
+            # measured gains act like heat input: the learner's gains are then the unmeasured base only
+            heat_kwh = prev.heat_kwh + prev.extra_gains_w * prev.length_h / 1000
+            self.learner.update_day(prev.ti, prev.to, heat_kwh, day.ti - prev.ti, prev.length_h)
         # standby once per day, whether or not the day also yields a COP sample
         self.cop_learner.update_standby(day.standby_w)
         if day.heating_ext_kwh is not None and self.cop_learner.update_day(
@@ -388,8 +411,23 @@ class ShadowEngine:
             rate_p=[cost.marginal_rate(add_hours(t, STEP_H * (i + 0.5))) for i in range(len(to_steps))],
             baseline_setpoint_c=baseline,
             target_c=comfort_targets(t, len(to_steps), STEP_H, comfort_periods),
+            extra_gains_w=self._gains_steps(s, t, len(to_steps)),
         )
         return recommend(inp, self.learner.params, self.plant, self.cop, cfg)
+
+    @staticmethod
+    def _gain_sources(s: ValidatedSnapshot) -> tuple[str, ...]:
+        return tuple(r.value for r in GAIN_ROLES if s.get(r) is not None)
+
+    def _pv_at(self, t: datetime) -> float | None:
+        return pv_at(self.pv_forecast, t) if self.pv_forecast else None
+
+    def _gains_steps(self, s: ValidatedSnapshot, t: datetime, n: int) -> list[float] | None:
+        """Forecast extra gains per step (None when no gain source is mapped)."""
+        if not self._gain_sources(s):
+            return None
+        times = [add_hours(t, STEP_H * (i + 0.5)) for i in range(n)]
+        return self.gains_fc.forecast(times, self.gains_now, self.pv_forecast, s.get(Role.SOLAR))
 
     @staticmethod
     def _to_steps(
@@ -428,6 +466,7 @@ class ShadowEngine:
             "day_acc": self.days.to_dict(),
             "cop_learner": self.cop_learner.to_dict(),
             "capacity": self.capacity.to_dict(),
+            "gains": self.gains_fc.to_dict(),
         }
 
     def load_dict(self, d: dict[str, Any]) -> list[str]:
@@ -443,6 +482,14 @@ class ShadowEngine:
             ok = False
         if not ok:
             warn.append("learner state invalid; using priors")
+        if "gains" in d:
+            try:
+                g_ok = self.gains_fc.load_dict(dict(d["gains"]))
+            except Exception:
+                g_ok = False
+            if not g_ok:
+                self.gains_fc = GainsForecaster(self.cfg.gains)
+                warn.append("gains profiles invalid; starting again")
         if "capacity" in d:
             try:
                 cap_ok = self.capacity.load_dict(dict(d["capacity"]))
@@ -528,6 +575,7 @@ class ShadowEngine:
             defrost_hours=int(num("defrost_hours", 0, 25)),
             ext_kwh=opt("ext_kwh", 0, 500),
             heating_ext_kwh=opt("heating_ext_kwh", 0, 500),
+            extra_gains_w=num("extra_gains_w", 0, 5000, 0.0),
             standby_w=opt("standby_w", 0, 200),
             length_h=num("length_h", 23, 25, 24.0),
         )

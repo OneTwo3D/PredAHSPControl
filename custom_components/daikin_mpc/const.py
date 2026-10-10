@@ -20,6 +20,11 @@ CONF_LEARNING: Final = "learning_enabled"
 CONF_UA: Final = "prior_ua_w_per_k"
 CONF_GAINS: Final = "prior_gains_w"
 CONF_C: Final = "prior_c_kwh_per_k"
+CONF_SOLCAST: Final = "solcast_entities"
+CONF_GAIN_HOUSEHOLD: Final = "gain_household_factor"
+CONF_GAIN_SOLAR: Final = "gain_solar_factor"
+CONF_GAIN_BATTERY: Final = "gain_battery_loss_fraction"
+CONF_GAIN_TANK: Final = "gain_tank_ua_w_per_k"
 
 # Defaults verified for the reference installation (docs/entity_mapping.md). They are only *suggested*
 # in the config flow; the user confirms or changes every mapping.
@@ -46,12 +51,30 @@ SUGGESTED: Final[dict[str, str]] = {
     Role.EXT_W.value: "sensor.kwh_meter_power",
     Role.EXT_KWH.value: "sensor.kwh_meter_energy_import",
     Role.DHW_ELEC_KWH.value: "sensor.bridge0_meters_electricity_consumed_compressor_dhw",
+    # heat-gain sources (core/gains.py)
+    Role.SOLAR.value: "sensor.ecowitt_solar_radiation",
+    # Role.HOUSE_W: not suggested yet: neither sensor.solis_house_load (misses AC-coupled PV supply)
+    # nor sensor.house_power (includes battery charging) is a clean consumption signal (10 Oct 2026).
+    Role.EV_W.value: "sensor.hypervolt_ev_power",
+    Role.OUTSIDE_W.value: "sensor.roof_loft_it_power",
+    Role.BATTERY_W.value: "sensor.solis_battery_power",
+    Role.TANK_C.value: "sensor.bridge0_dhw_temperature_r5t_dhw_tank",
+    CONF_SOLCAST: "sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow",
     CONF_WEATHER: "weather.forecast_home",
     CONF_PREDHEAT_H1: "predheat.internal_temp_h1",
     CONF_PREDHEAT_H8: "predheat.internal_temp_h8",
 }
 
-DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 440.0, CONF_C: 5.5}
+# Base gains = gains not measured by a mapped source. 440 W with no gain source mapped; with sun,
+# battery and tank losses measured (winter means 51 + 62 + 37 W) ≈ 290 W; it would drop further once
+# household electricity is measured cleanly.
+DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 290.0, CONF_C: 5.5}
+DEFAULT_GAINS: Final = {
+    CONF_GAIN_HOUSEHOLD: 0.7,
+    CONF_GAIN_SOLAR: 1.5,
+    CONF_GAIN_BATTERY: 0.045,
+    CONF_GAIN_TANK: 1.5,
+}
 
 # M3 shadow optimiser
 CONF_ROOM_MIN: Final = "room_min_c"

@@ -99,6 +99,8 @@ class DayRecord:
     heating_ext_kwh: float | None = None
     # Mean external power in hours with the compressor off all hour (standby), W.
     standby_w: float | None = None
+    # Mean measured gains beyond the base gains (household electricity, sun, battery, tank), W.
+    extra_gains_w: float = 0.0
     # Length of the local day (23 or 25 on daylight-saving change days).
     length_h: float = 24.0
 
@@ -172,7 +174,8 @@ class HourAccumulator:
         # longer gap (HA restart, bridge outage) cannot be placed in time and are not counted.
         self.counter_time: dict[str, datetime] = {}
 
-    def add(self, s: ValidatedSnapshot) -> list[HourRecord]:
+    def add(self, s: ValidatedSnapshot, extras: dict[str, float] | None = None) -> list[HourRecord]:
+        """``extras``: derived quantities averaged like the mean roles (e.g. ``gains_w``)."""
         done: list[HourRecord] = []
         if self._last_time is not None and elapsed_s(self._last_time, s.time) <= 0:
             # the clock went back (or a duplicate sample): the timeline is unreliable, so the current
@@ -216,11 +219,11 @@ class HourAccumulator:
         self._last_time = s.time
         if s.complete and dt > 0:
             a.covered_s += dt
-            for role in MEAN_ROLES:
-                v = s.get(role)
-                if v is not None:
-                    a.sums[role.value] = a.sums.get(role.value, 0.0) + v * dt
-                    a.weights[role.value] = a.weights.get(role.value, 0.0) + dt
+            values = [(role.value, s.get(role)) for role in MEAN_ROLES]
+            for name, v in (*values, *(extras or {}).items()):
+                if v is not None and math.isfinite(v):
+                    a.sums[name] = a.sums.get(name, 0.0) + v * dt
+                    a.weights[name] = a.weights.get(name, 0.0) + dt
         hz = s.get(Role.HZ)
         if hz is not None:
             a.hz_min, a.hz_max = min(a.hz_min, hz), max(a.hz_max, hz)
@@ -480,6 +483,9 @@ class DayAggregator:
             ext_kwh=ext,
             heating_ext_kwh=heating_ext,
             standby_w=standby,
+            extra_gains_w=(
+                sum(g) / len(g) if (g := [h.means["gains_w"] for h in hs if "gains_w" in h.means]) else 0.0
+            ),
             length_h=length_h,
         )
 

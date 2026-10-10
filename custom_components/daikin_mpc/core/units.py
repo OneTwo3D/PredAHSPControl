@@ -35,6 +35,7 @@ _FLOW: dict[str, Callable[[float], float]] = {
     "m³/h": lambda v: v * 1000.0 / 60.0,
 }
 _FREQ: dict[str, Callable[[float], float]] = {"Hz": lambda v: v}
+_IRRADIANCE: dict[str, Callable[[float], float]] = {"W/m²": lambda v: v, "W/m2": lambda v: v}
 
 ROLE_UNITS: dict[Role, dict[str, Callable[[float], float]]] = {
     Role.TI: _TEMP,
@@ -54,6 +55,12 @@ ROLE_UNITS: dict[Role, dict[str, Callable[[float], float]]] = {
     Role.DHW_ELEC_KWH: _ENERGY,
     Role.FLOW: _FLOW,
     Role.HZ: _FREQ,
+    Role.SOLAR: _IRRADIANCE,
+    Role.HOUSE_W: _POWER,
+    Role.EV_W: _POWER,
+    Role.OUTSIDE_W: _POWER,
+    Role.BATTERY_W: _POWER,
+    Role.TANK_C: _TEMP,
 }
 
 

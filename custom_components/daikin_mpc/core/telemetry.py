@@ -38,6 +38,13 @@ class Role(StrEnum):
     EXT_KWH = "ext_kwh"  # external electricity meter cumulative energy, kWh
     DHW_ELEC_KWH = "dhw_elec_kwh"  # Daikin cumulative DHW electricity, kWh (to split the external meter)
     HEARTBEAT = "heartbeat"  # any bridge entity that changes every minute (e.g. Daikin clock)
+    # Optional heat-gain sources (see core/gains.py)
+    SOLAR = "solar_radiation"  # global solar radiation, W/m² (weather station)
+    HOUSE_W = "house_w"  # whole-house electricity incl. heat pump (e.g. inverter house load), W
+    EV_W = "ev_w"  # EV charger power (outside the envelope), W
+    OUTSIDE_W = "outside_w"  # other loads outside the envelope (e.g. loft IT), W
+    BATTERY_W = "battery_w"  # home battery power (sign ignored; losses inside the envelope), W
+    TANK_C = "tank_c"  # hot-water tank temperature (tank inside the envelope), °C
 
 
 REQUIRED_ROLES: tuple[Role, ...] = (
@@ -78,6 +85,12 @@ RANGES: dict[Role, tuple[float, float]] = {
     Role.EXT_W: (0.0, 15000.0),
     Role.EXT_KWH: (0.0, 1e9),
     Role.DHW_ELEC_KWH: (0.0, 1e9),
+    Role.SOLAR: (0.0, 1500.0),
+    Role.HOUSE_W: (0.0, 30000.0),
+    Role.EV_W: (0.0, 25000.0),
+    Role.OUTSIDE_W: (0.0, 10000.0),
+    Role.BATTERY_W: (-15000.0, 15000.0),
+    Role.TANK_C: (0.0, 95.0),
 }
 
 # P1P2MQTT publishes on change only, so an unchanged value (idle compressor, counters, setpoints) is

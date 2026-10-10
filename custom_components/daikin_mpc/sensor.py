@@ -207,12 +207,30 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
     ),
     MpcSensorDescription(
         key="internal_gain",
-        name="Internal gains",
+        name="Base internal gains",
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda s: round(s.gains),
-        attrs_fn=lambda s: {"std_dev": round(s.sd["gains"], 1)},
+        attrs_fn=lambda s: {
+            "std_dev": round(s.sd["gains"], 1),
+            "note": "unmeasured gains (people, unmetered appliances); measured ones: Heat gains now",
+        },
+    ),
+    MpcSensorDescription(
+        key="heat_gains_now",
+        name="Heat gains now",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda s: (
+            round(s.gains_now.total_w) if s.gains_now is not None and s.gains_sources else None
+        ),
+        attrs_fn=lambda s: {
+            **(s.gains_now.as_dict() if s.gains_now is not None else {}),
+            "sources": list(s.gains_sources),
+            "solar_ratio": round(s.solar_ratio, 4) if s.solar_ratio is not None else None,
+        },
     ),
     MpcSensorDescription(
         key="estimated_cop",

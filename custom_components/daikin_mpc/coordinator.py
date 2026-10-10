@@ -20,16 +20,22 @@ from .const import (
     CONF_C,
     CONF_COMFORT_PERIODS,
     CONF_COST_BASIS,
+    CONF_GAIN_BATTERY,
+    CONF_GAIN_HOUSEHOLD,
+    CONF_GAIN_SOLAR,
+    CONF_GAIN_TANK,
     CONF_GAINS,
     CONF_LEARNING,
     CONF_PREDHEAT_H1,
     CONF_PREDHEAT_H8,
     CONF_ROOM_MAX,
     CONF_ROOM_MIN,
+    CONF_SOLCAST,
     CONF_TARIFF_EXPORT,
     CONF_TARIFF_IMPORT,
     CONF_UA,
     CONF_WEATHER,
+    DEFAULT_GAINS,
     DEFAULT_OPTIMISER,
     DEFAULT_PRIORS,
     DOMAIN,
@@ -50,6 +56,7 @@ from .core.cost_model import (
     parse_tariff,
 )
 from .core.engine import EngineConfig, EngineStatus, ShadowEngine
+from .core.gains import GainsConfig, parse_solcast
 from .core.optimiser import OptimiserConfig, Recommendation
 from .core.telemetry import BINARY_ROLES, COUNTER_ROLES, Reading, Role, Snapshot, validate
 from .core.timeutil import elapsed_s
@@ -67,13 +74,19 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=UPDATE_INTERVAL)
-        opts = {**DEFAULT_PRIORS, **DEFAULT_OPTIMISER, **entry.options}
+        opts = {**DEFAULT_PRIORS, **DEFAULT_OPTIMISER, **DEFAULT_GAINS, **entry.options}
         self.engine = ShadowEngine(
             EngineConfig(
                 ua_w_per_k=float(opts[CONF_UA]),
                 gains_w=float(opts[CONF_GAINS]),
                 c_wh_per_k=float(opts[CONF_C]) * 1000.0,
                 learning_enabled=bool(opts.get(CONF_LEARNING, True)),
+                gains=GainsConfig(
+                    household_factor=float(opts[CONF_GAIN_HOUSEHOLD]),
+                    solar_factor=float(opts[CONF_GAIN_SOLAR]),
+                    battery_loss_fraction=float(opts[CONF_GAIN_BATTERY]),
+                    tank_ua_w_per_k=float(opts[CONF_GAIN_TANK]),
+                ),
             )
         )
         self.mapping: dict[str, str] = dict(entry.data)
@@ -187,6 +200,16 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             if self._weather and self._weather[-1][0] < now:
                 self._weather = None
 
+    def _solcast(self) -> list[tuple[datetime, float]] | None:
+        """Solcast PV forecast (period start, W) from the configured forecast entities' attributes."""
+        ids = [e.strip() for e in str(self.mapping.get(CONF_SOLCAST) or "").split(",") if e.strip()]
+        lists = []
+        for eid in ids:
+            st = self.hass.states.get(eid)
+            if st is not None:
+                lists.append(st.attributes.get("detailedForecast"))
+        return parse_solcast(lists) or None
+
     def _external(self) -> dict[str, tuple[float, float]]:
         out: dict[str, tuple[float, float]] = {}
         for key, name, horizon in (
@@ -211,7 +234,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         await self._async_weather(now)
         snap = validate(self._snapshot(now))
         try:
-            status = self.engine.process(snap, self._weather, self._external())
+            status = self.engine.process(snap, self._weather, self._external(), self._solcast())
         except Exception as err:  # never let a model error take HA down; surface it instead
             raise UpdateFailed(f"engine error: {err}") from err
         await self._async_optimise(now, snap, status.telemetry_ok)

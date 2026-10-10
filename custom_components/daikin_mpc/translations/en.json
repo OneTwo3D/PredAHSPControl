@@ -29,7 +29,14 @@
           "dhw_elec_kwh": "Electricity used for hot water, Daikin counter (kWh)",
           "weather": "Weather forecast",
           "predheat_h1": "Predheat forecast, 1 hour ahead (optional)",
-          "predheat_h8": "Predheat forecast, 8 hours ahead (optional)"
+          "predheat_h8": "Predheat forecast, 8 hours ahead (optional)",
+          "solar_radiation": "Solar radiation (W/m²)",
+          "house_w": "Whole-house electricity (W)",
+          "ev_w": "EV charger power (W)",
+          "outside_w": "Loads outside the house (W)",
+          "battery_w": "Home battery power (W)",
+          "tank_c": "Hot-water tank temperature (°C)",
+          "solcast_entities": "Solar forecast entities (optional)"
         },
         "data_description": {
           "ti": "Living-room temperature measured by the Daikin room thermostat.",
@@ -48,7 +55,14 @@
           "dhw_elec_kwh": "Used to separate hot water from heating in the external meter.",
           "weather": "Hourly outdoor temperature forecast.",
           "predheat_h1": "Type the entity id, e.g. predheat.internal_temp_h1. Only used to compare forecast accuracy.",
-          "predheat_h8": "e.g. predheat.internal_temp_h8."
+          "predheat_h8": "e.g. predheat.internal_temp_h8.",
+          "solar_radiation": "Weather-station radiation. Sun through the windows warms the house.",
+          "house_w": "Electricity used inside the house, including the heat pump. Must exclude battery charging and include all PV supply; leave empty if no such sensor exists.",
+          "ev_w": "Charging happens outside the house, so this is subtracted from the house load.",
+          "outside_w": "E.g. loft IT. Subtracted from the house load (their heat does not reach the rooms).",
+          "battery_w": "Battery and inverter inside the house: their conversion losses warm it.",
+          "tank_c": "Tank inside the house: its standing heat loss warms it.",
+          "solcast_entities": "Solcast forecast entities for today and tomorrow, comma-separated, e.g. sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow. Used to forecast sunny periods."
         }
       },
       "reconfigure": {
@@ -79,7 +93,14 @@
           "dhw_elec_kwh": "Electricity used for hot water, Daikin counter (kWh)",
           "weather": "Weather forecast",
           "predheat_h1": "Predheat forecast, 1 hour ahead (optional)",
-          "predheat_h8": "Predheat forecast, 8 hours ahead (optional)"
+          "predheat_h8": "Predheat forecast, 8 hours ahead (optional)",
+          "solar_radiation": "Solar radiation (W/m²)",
+          "house_w": "Whole-house electricity (W)",
+          "ev_w": "EV charger power (W)",
+          "outside_w": "Loads outside the house (W)",
+          "battery_w": "Home battery power (W)",
+          "tank_c": "Hot-water tank temperature (°C)",
+          "solcast_entities": "Solar forecast entities (optional)"
         },
         "data_description": {
           "ti": "Living-room temperature measured by the Daikin room thermostat.",
@@ -98,7 +119,14 @@
           "dhw_elec_kwh": "Used to separate hot water from heating in the external meter.",
           "weather": "Hourly outdoor temperature forecast.",
           "predheat_h1": "Type the entity id, e.g. predheat.internal_temp_h1. Only used to compare forecast accuracy.",
-          "predheat_h8": "e.g. predheat.internal_temp_h8."
+          "predheat_h8": "e.g. predheat.internal_temp_h8.",
+          "solar_radiation": "Weather-station radiation. Sun through the windows warms the house.",
+          "house_w": "Electricity used inside the house, including the heat pump. Must exclude battery charging and include all PV supply; leave empty if no such sensor exists.",
+          "ev_w": "Charging happens outside the house, so this is subtracted from the house load.",
+          "outside_w": "E.g. loft IT. Subtracted from the house load (their heat does not reach the rooms).",
+          "battery_w": "Battery and inverter inside the house: their conversion losses warm it.",
+          "tank_c": "Tank inside the house: its standing heat loss warms it.",
+          "solcast_entities": "Solcast forecast entities for today and tomorrow, comma-separated, e.g. sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow. Used to forecast sunny periods."
         }
       }
     },
@@ -118,14 +146,18 @@
         "data": {
           "learning_enabled": "Learning enabled",
           "prior_ua_w_per_k": "Heat loss coefficient prior (W/K)",
-          "prior_gains_w": "Internal gains prior (W)",
+          "prior_gains_w": "Base internal gains prior (W)",
           "prior_c_kwh_per_k": "Thermal capacity prior (kWh/K)",
           "room_min_c": "Lowest allowed room temperature",
           "room_max_c": "Highest allowed room temperature",
           "cost_basis": "How electricity is priced",
           "fallback_import_tariff": "Import tariff if Predbat is not available",
           "fallback_export_tariff": "Export tariff if Predbat is not available",
-          "comfort_periods": "Preferred temperature periods"
+          "comfort_periods": "Preferred temperature periods",
+          "gain_household_factor": "Share of household electricity that warms the house",
+          "gain_solar_factor": "Solar gain (W per W/m²)",
+          "gain_battery_loss_fraction": "Battery/inverter loss fraction",
+          "gain_tank_ua_w_per_k": "Hot-water tank heat loss (W/K)"
         },
         "data_description": {
           "room_min_c": "Recommendations keep the room at or above this all day and night.",
@@ -133,7 +165,12 @@
           "cost_basis": "Battery-aware: daytime energy is valued at what it would earn if exported, or cost to store at night. Tariff: raw import prices.",
           "fallback_import_tariff": "Prices normally come from Predbat (predbat.rates). Format: 00:00-05:00=7.6, 05:00-24:00=34.87",
           "fallback_export_tariff": "Normally from Predbat (predbat.rates_export). Same format.",
-          "comfort_periods": "Times when the room should ideally be warmer, e.g. 07:00-09:00=21, 18:00-24:00=21. Outside them the lowest allowed temperature applies."
+          "comfort_periods": "Times when the room should ideally be warmer, e.g. 07:00-09:00=21, 18:00-24:00=21. Outside them the lowest allowed temperature applies.",
+          "prior_gains_w": "Gains not measured by any mapped sensor (people, appliances). About 290 W with sun, battery and tank mapped; about 440 W with none of them.",
+          "gain_household_factor": "House load minus heat pump, EV and outside loads; about 0.7 of it warms the rooms (2025/26 data).",
+          "gain_solar_factor": "Heat from the sun per W/m² of measured radiation; 1.5 from last winter.",
+          "gain_battery_loss_fraction": "Share of battery power lost as heat inside the house; 0.045 from the Predbat loss settings.",
+          "gain_tank_ua_w_per_k": "Tank heat loss per K of tank-to-room difference; about 1.5 W/K for a 180 L cylinder."
         }
       }
     },

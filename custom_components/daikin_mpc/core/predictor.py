@@ -62,10 +62,13 @@ def plant_step(
     building: ThermalParams,
     plant: PlantParams,
     step_h: float,
+    extra_gains_w: float = 0.0,
 ) -> tuple[float, bool, float]:
     """Advance one step: thermostat decision, heat delivered, room temperature.
 
-    Returns ``(new room temperature, thermostat calling, heat delivered in W)``.
+    ``extra_gains_w``: measured/forecast gains on top of the building's base gains (household
+    electricity, sun, battery and tank losses). Returns ``(new room temperature, thermostat calling,
+    heat delivered in W)``.
     """
     if heating_enabled:
         if running and ti >= sp + plant.hysteresis_off_k:
@@ -81,7 +84,7 @@ def plant_step(
         lwt = max(lwt_set + mod, plant.min_lwt_c)
         mwt = lwt - plant.flow_return_dt_k / 2
         q = min(plant.q_max_w, plant.radiator.output_w(mwt, ti))
-    return step(ti, to, q, step_h, building), running, q
+    return step(ti, to, q + extra_gains_w, step_h, building), running, q
 
 
 def forecast(
@@ -95,13 +98,15 @@ def forecast(
     plant: PlantParams,
     cop: Callable[[float], float],
     step_h: float = 0.25,
+    extra_gains_w: Sequence[float] | None = None,
 ) -> Forecast:
     """Simulate ``len(to_c)`` steps. All sequences are per step."""
     ti = ti0_c
     running = running0 and heating_enabled
     out_t, out_q, out_e, out_r = [ti], [], [], []
-    for to, sp, lwt_set in zip(to_c, setpoint_c, lwt_set_c, strict=True):
-        ti, running, q = plant_step(ti, running, to, sp, lwt_set, heating_enabled, building, plant, step_h)
+    extra = list(extra_gains_w) if extra_gains_w is not None else [0.0] * len(to_c)
+    for to, sp, lwt_set, g in zip(to_c, setpoint_c, lwt_set_c, extra, strict=True):
+        ti, running, q = plant_step(ti, running, to, sp, lwt_set, heating_enabled, building, plant, step_h, g)
         out_t.append(ti)
         out_q.append(q * step_h)
         out_e.append(q * step_h / max(cop(to), 1.0) if q > 0 else 0.0)

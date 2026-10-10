@@ -16,16 +16,22 @@ from .const import (
     CONF_C,
     CONF_COMFORT_PERIODS,
     CONF_COST_BASIS,
+    CONF_GAIN_BATTERY,
+    CONF_GAIN_HOUSEHOLD,
+    CONF_GAIN_SOLAR,
+    CONF_GAIN_TANK,
     CONF_GAINS,
     CONF_LEARNING,
     CONF_PREDHEAT_H1,
     CONF_PREDHEAT_H8,
     CONF_ROOM_MAX,
     CONF_ROOM_MIN,
+    CONF_SOLCAST,
     CONF_TARIFF_EXPORT,
     CONF_TARIFF_IMPORT,
     CONF_UA,
     CONF_WEATHER,
+    DEFAULT_GAINS,
     DEFAULT_OPTIMISER,
     DEFAULT_PRIORS,
     DOMAIN,
@@ -44,7 +50,7 @@ _ANY = selector.EntitySelector(selector.EntitySelectorConfig())
 # the entity picker cannot always hold them, so these are entered as text.
 _TEXT = selector.TextSelector()
 
-_OPTIONAL_EXTERNAL = {CONF_PREDHEAT_H1, CONF_PREDHEAT_H8}
+_OPTIONAL_EXTERNAL = {CONF_PREDHEAT_H1, CONF_PREDHEAT_H8, CONF_SOLCAST}
 _BINARY_KEYS = {
     Role.DEFROST.value,
     Role.DHW_ACTIVE.value,
@@ -65,6 +71,7 @@ def _schema() -> vol.Schema:
     fields[vol.Optional(CONF_WEATHER)] = _WEATHER
     fields[vol.Optional(CONF_PREDHEAT_H1)] = _TEXT
     fields[vol.Optional(CONF_PREDHEAT_H8)] = _TEXT
+    fields[vol.Optional(CONF_SOLCAST)] = _TEXT  # comma-separated forecast entities (today, tomorrow)
     return vol.Schema(fields)
 
 
@@ -157,6 +164,28 @@ OPTIONS_SCHEMA = vol.Schema(
         ),
         vol.Required(CONF_TARIFF_IMPORT): selector.TextSelector(),
         vol.Required(CONF_TARIFF_EXPORT): selector.TextSelector(),
+        vol.Optional(
+            CONF_GAIN_HOUSEHOLD, default=DEFAULT_GAINS[CONF_GAIN_HOUSEHOLD]
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=1, step=0.05, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Optional(CONF_GAIN_SOLAR, default=DEFAULT_GAINS[CONF_GAIN_SOLAR]): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=20,
+                step=0.1,
+                unit_of_measurement="W per W/m²",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Optional(CONF_GAIN_BATTERY, default=DEFAULT_GAINS[CONF_GAIN_BATTERY]): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=0.2, step=0.005, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Optional(CONF_GAIN_TANK, default=DEFAULT_GAINS[CONF_GAIN_TANK]): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=10, step=0.1, unit_of_measurement="W/K", mode=selector.NumberSelectorMode.BOX
+            )
+        ),
     }
 )
 
@@ -182,7 +211,13 @@ class DaikinMpcOptionsFlow(OptionsFlowWithReload):
                     errors[key] = "bad_tariff"
             if not errors:
                 return self.async_create_entry(data=user_input)
-        current = {CONF_LEARNING: True, **DEFAULT_PRIORS, **DEFAULT_OPTIMISER, **self.config_entry.options}
+        current = {
+            CONF_LEARNING: True,
+            **DEFAULT_PRIORS,
+            **DEFAULT_OPTIMISER,
+            **DEFAULT_GAINS,
+            **self.config_entry.options,
+        }
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, user_input or current),
