@@ -118,3 +118,9 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
 * DHW split signal: `binary_sensor.bridge0_dhw_dhw_demand` (the 3-way valve rests on "tank" when
   idle, so it cannot separate DHW from standby). 4–10 Oct: 6.8 kWh DHW, 2.3 kWh standby.
 * Phase A package: `docs/ha/packages/energy.yaml` (all templates rendered live without errors).
+
+## 7. Progress
+
+* 10 Oct 2026: phase A package installed (28 entities live).
+* 10 Oct 2026: Energy dashboard updated: grid export -> smart meter; devices: heat pump (parent
+  `ashp_daily_electricity`) with heating / hot water / standby sub-devices, and Solis inverter losses.
