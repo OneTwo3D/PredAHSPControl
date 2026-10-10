@@ -31,12 +31,13 @@
           "predheat_h1": "Predheat forecast, 1 hour ahead (optional)",
           "predheat_h8": "Predheat forecast, 8 hours ahead (optional)",
           "solar_radiation": "Solar radiation (W/m²)",
-          "house_w": "Whole-house electricity (W)",
+          "house_w": "House electricity (W)",
           "ev_w": "EV charger power (W)",
           "outside_w": "Loads outside the house (W)",
-          "battery_w": "Home battery power (W)",
+          "battery_w": "Battery power, loss estimate (W)",
           "tank_c": "Hot-water tank temperature (°C)",
-          "solcast_entities": "Solar forecast entities (optional)"
+          "solcast_entities": "Solar forecast entities (optional)",
+          "inverter_loss_w": "Inverter losses (W)"
         },
         "data_description": {
           "ti": "Living-room temperature measured by the Daikin room thermostat.",
@@ -57,12 +58,13 @@
           "predheat_h1": "Type the entity id, e.g. predheat.internal_temp_h1. Only used to compare forecast accuracy.",
           "predheat_h8": "e.g. predheat.internal_temp_h8.",
           "solar_radiation": "Weather-station radiation. Sun through the windows warms the house.",
-          "house_w": "Electricity used inside the house, including the heat pump. Must exclude battery charging and include all PV supply; leave empty if no such sensor exists.",
+          "house_w": "Electricity used in the house including the heat pump, measured on the AC side: grid + inverter output + other PV. Must not include battery charging or the inverter's own losses.",
           "ev_w": "Charging happens outside the house, so this is subtracted from the house load.",
           "outside_w": "E.g. loft IT. Subtracted from the house load (their heat does not reach the rooms).",
-          "battery_w": "Battery and inverter inside the house: their conversion losses warm it.",
+          "battery_w": "Only used when no inverter-loss sensor is mapped: losses are then estimated as a share of the battery power (misses the inverter's standby consumption).",
           "tank_c": "Tank inside the house: its standing heat loss warms it.",
-          "solcast_entities": "Solcast forecast entities for today and tomorrow, comma-separated, e.g. sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow. Used to forecast sunny periods."
+          "solcast_entities": "Solcast forecast entities for today and tomorrow, comma-separated, e.g. sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow. Used to forecast sunny periods.",
+          "inverter_loss_w": "Losses of a hybrid inverter/battery installed inside the heated house (PV + battery − AC output). Counted fully as heat; replaces the battery-power estimate."
         }
       },
       "reconfigure": {
@@ -95,12 +97,13 @@
           "predheat_h1": "Predheat forecast, 1 hour ahead (optional)",
           "predheat_h8": "Predheat forecast, 8 hours ahead (optional)",
           "solar_radiation": "Solar radiation (W/m²)",
-          "house_w": "Whole-house electricity (W)",
+          "house_w": "House electricity (W)",
           "ev_w": "EV charger power (W)",
           "outside_w": "Loads outside the house (W)",
-          "battery_w": "Home battery power (W)",
+          "battery_w": "Battery power, loss estimate (W)",
           "tank_c": "Hot-water tank temperature (°C)",
-          "solcast_entities": "Solar forecast entities (optional)"
+          "solcast_entities": "Solar forecast entities (optional)",
+          "inverter_loss_w": "Inverter losses (W)"
         },
         "data_description": {
           "ti": "Living-room temperature measured by the Daikin room thermostat.",
@@ -121,12 +124,13 @@
           "predheat_h1": "Type the entity id, e.g. predheat.internal_temp_h1. Only used to compare forecast accuracy.",
           "predheat_h8": "e.g. predheat.internal_temp_h8.",
           "solar_radiation": "Weather-station radiation. Sun through the windows warms the house.",
-          "house_w": "Electricity used inside the house, including the heat pump. Must exclude battery charging and include all PV supply; leave empty if no such sensor exists.",
+          "house_w": "Electricity used in the house including the heat pump, measured on the AC side: grid + inverter output + other PV. Must not include battery charging or the inverter's own losses.",
           "ev_w": "Charging happens outside the house, so this is subtracted from the house load.",
           "outside_w": "E.g. loft IT. Subtracted from the house load (their heat does not reach the rooms).",
-          "battery_w": "Battery and inverter inside the house: their conversion losses warm it.",
+          "battery_w": "Only used when no inverter-loss sensor is mapped: losses are then estimated as a share of the battery power (misses the inverter's standby consumption).",
           "tank_c": "Tank inside the house: its standing heat loss warms it.",
-          "solcast_entities": "Solcast forecast entities for today and tomorrow, comma-separated, e.g. sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow. Used to forecast sunny periods."
+          "solcast_entities": "Solcast forecast entities for today and tomorrow, comma-separated, e.g. sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow. Used to forecast sunny periods.",
+          "inverter_loss_w": "Losses of a hybrid inverter/battery installed inside the heated house (PV + battery − AC output). Counted fully as heat; replaces the battery-power estimate."
         }
       }
     },
@@ -167,9 +171,9 @@
           "fallback_export_tariff": "Normally from Predbat (predbat.rates_export). Same format.",
           "comfort_periods": "Times when the room should ideally be warmer, e.g. 07:00-09:00=21, 18:00-24:00=21. Outside them the lowest allowed temperature applies.",
           "prior_gains_w": "Gains not measured by any mapped sensor (people, appliances). About 290 W with sun, battery and tank mapped; about 440 W with none of them.",
-          "gain_household_factor": "House load minus heat pump, EV and outside loads; about 0.7 of it warms the rooms (2025/26 data).",
+          "gain_household_factor": "Share of household electricity that warms the room. Default 0: last winter's data showed no measurable effect; its average is already in the base gains.",
           "gain_solar_factor": "Heat from the sun per W/m² of measured radiation; 1.5 from last winter.",
-          "gain_battery_loss_fraction": "Share of battery power lost as heat inside the house; 0.045 from the Predbat loss settings.",
+          "gain_battery_loss_fraction": "Loss share of the battery power, used only when no inverter-loss sensor is mapped.",
           "gain_tank_ua_w_per_k": "Tank heat loss per K of tank-to-room difference; about 1.5 W/K for a 180 L cylinder."
         }
       }

@@ -99,8 +99,10 @@ class DayRecord:
     heating_ext_kwh: float | None = None
     # Mean external power in hours with the compressor off all hour (standby), W.
     standby_w: float | None = None
-    # Mean measured gains beyond the base gains (household electricity, sun, battery, tank), W.
+    # Mean measured gains beyond the base gains (household electricity, sun, inverter, tank), W.
     extra_gains_w: float = 0.0
+    # Share of the day's time with every configured gain source available (None: none configured).
+    gains_coverage: float | None = None
     # Length of the local day (23 or 25 on daylight-saving change days).
     length_h: float = 24.0
 
@@ -485,6 +487,12 @@ class DayAggregator:
             standby_w=standby,
             extra_gains_w=(
                 sum(g) / len(g) if (g := [h.means["gains_w"] for h in hs if "gains_w" in h.means]) else 0.0
+            ),
+            # an hour without the key (source not configured yet) counts as uncovered
+            gains_coverage=(
+                sum(h.means.get("gains_ok", 0.0) for h in hs) / len(hs)
+                if any("gains_ok" in h.means for h in hs)
+                else None
             ),
             length_h=length_h,
         )

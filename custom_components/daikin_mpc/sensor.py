@@ -229,6 +229,7 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
         attrs_fn=lambda s: {
             **(s.gains_now.as_dict() if s.gains_now is not None else {}),
             "sources": list(s.gains_sources),
+            "complete": s.gains_complete,  # every configured gain source available (else not learned from)
             "solar_ratio": round(s.solar_ratio, 4) if s.solar_ratio is not None else None,
         },
     ),

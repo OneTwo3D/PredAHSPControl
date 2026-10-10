@@ -37,7 +37,6 @@ from .const import (
     CONF_WEATHER,
     DEFAULT_GAINS,
     DEFAULT_OPTIMISER,
-    DEFAULT_PRIORS,
     DOMAIN,
     OPTIMISE_INTERVAL,
     PREDBAT_LOSSES,
@@ -47,6 +46,7 @@ from .const import (
     STORAGE_VERSION,
     UPDATE_INTERVAL,
     WEATHER_REFRESH,
+    default_priors,
 )
 from .core.cost_model import (
     CostProvider,
@@ -74,7 +74,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=UPDATE_INTERVAL)
-        opts = {**DEFAULT_PRIORS, **DEFAULT_OPTIMISER, **DEFAULT_GAINS, **entry.options}
+        opts = {**default_priors(entry.data), **DEFAULT_OPTIMISER, **DEFAULT_GAINS, **entry.options}
         self.engine = ShadowEngine(
             EngineConfig(
                 ua_w_per_k=float(opts[CONF_UA]),

@@ -40,10 +40,11 @@ class Role(StrEnum):
     HEARTBEAT = "heartbeat"  # any bridge entity that changes every minute (e.g. Daikin clock)
     # Optional heat-gain sources (see core/gains.py)
     SOLAR = "solar_radiation"  # global solar radiation, W/m² (weather station)
-    HOUSE_W = "house_w"  # whole-house electricity incl. heat pump (e.g. inverter house load), W
+    HOUSE_W = "house_w"  # whole-house electricity incl. heat pump, AC side (no inverter losses), W
     EV_W = "ev_w"  # EV charger power (outside the envelope), W
     OUTSIDE_W = "outside_w"  # other loads outside the envelope (e.g. loft IT), W
-    BATTERY_W = "battery_w"  # home battery power (sign ignored; losses inside the envelope), W
+    INVERTER_LOSS_W = "inverter_loss_w"  # measured inverter/battery losses inside the envelope, W
+    BATTERY_W = "battery_w"  # home battery power (sign ignored); loss estimate without INVERTER_LOSS_W, W
     TANK_C = "tank_c"  # hot-water tank temperature (tank inside the envelope), °C
 
 
@@ -89,6 +90,7 @@ RANGES: dict[Role, tuple[float, float]] = {
     Role.HOUSE_W: (0.0, 30000.0),
     Role.EV_W: (0.0, 25000.0),
     Role.OUTSIDE_W: (0.0, 10000.0),
+    Role.INVERTER_LOSS_W: (0.0, 3000.0),
     Role.BATTERY_W: (-15000.0, 15000.0),
     Role.TANK_C: (0.0, 95.0),
 }
@@ -100,6 +102,10 @@ DEFAULT_MAX_AGE_S: dict[Role, float] = {
     Role.HEARTBEAT: 10 * 60.0,
     Role.TI: 3 * 3600.0,
     Role.TO: 3 * 3600.0,
+    # derived from meters that report every few seconds: a value frozen for hours means a dead source
+    # (EV, outside loads and tank may legitimately stay unchanged for days and get no limit)
+    Role.HOUSE_W: 2 * 3600.0,
+    Role.INVERTER_LOSS_W: 2 * 3600.0,
 }
 FALLBACK_MAX_AGE_S = math.inf
 

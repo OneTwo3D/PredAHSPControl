@@ -88,12 +88,25 @@ class CapacityLearner:
             return None
         return x, y
 
-    def add(self, before: HourRecord, h0: HourRecord, h1: HourRecord) -> bool:
-        """Add one hour pair if it is a clean free-cooling pair; returns whether it was used."""
+    def add(self, before: HourRecord, h0: HourRecord, h1: HourRecord, ua: float | None = None) -> bool:
+        """Add one hour pair if it is a clean free-cooling pair; returns whether it was used.
+
+        Measured gains recorded with the hours (``gains_w``) are taken out of the regression with the
+        current ``ua``: ``dTi = G_base/C − (UA/C)·(Ti − To − G_extra/UA)``. Otherwise gains that vary
+        with the temperature difference (e.g. battery use on cold nights) would bias the slope. Pairs
+        whose gains are only partly known are skipped.
+        """
         pair = self.clean_pair(before, h0, h1)
         if pair is None or pair[0] < self.min_dt_k:
             return False
-        return self._add(h0, *pair)
+        x, y = pair
+        if any("gains_ok" in h.means for h in (h0, h1)):
+            if not all(h.means.get("gains_ok", 0.0) >= 0.999 and "gains_w" in h.means for h in (h0, h1)):
+                return False
+            if not (ua is not None and ua > 0):
+                return False
+            x -= (h0.means["gains_w"] + h1.means["gains_w"]) / 2 / ua
+        return self._add(h0, x, y)
 
     def _add(self, h0: HourRecord, x: float, y: float) -> bool:
         days = 0.0 if self.last_time is None else max(0.0, elapsed_s(self.last_time, h0.start) / 86400)
@@ -109,7 +122,8 @@ class CapacityLearner:
         return True
 
     def estimate(self, ua_w_per_k: float) -> CapacityEstimate | None:
-        """C from the cooling slope and the current UA, once the data identify it."""
+        """C from the cooling slope and the current UA, once the data identify it. ``gains_night_w`` is
+        the unmeasured (base) part when measured gains were recorded."""
         if self.n < self.min_pairs or self.nights < self.min_nights or not ua_w_per_k > 0:
             return None
         mx, my = self.sx / self.n, self.sy / self.n

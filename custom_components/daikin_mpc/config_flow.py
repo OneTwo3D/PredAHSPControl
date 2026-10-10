@@ -33,9 +33,9 @@ from .const import (
     CONF_WEATHER,
     DEFAULT_GAINS,
     DEFAULT_OPTIMISER,
-    DEFAULT_PRIORS,
     DOMAIN,
     SUGGESTED,
+    default_priors,
 )
 from .core.cost_model import parse_periods, parse_tariff
 from .core.telemetry import REQUIRED_ROLES, Role
@@ -213,7 +213,7 @@ class DaikinMpcOptionsFlow(OptionsFlowWithReload):
                 return self.async_create_entry(data=user_input)
         current = {
             CONF_LEARNING: True,
-            **DEFAULT_PRIORS,
+            **default_priors(self.config_entry.data),
             **DEFAULT_OPTIMISER,
             **DEFAULT_GAINS,
             **self.config_entry.options,

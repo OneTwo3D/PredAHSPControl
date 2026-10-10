@@ -5,6 +5,44 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.0] - 2026-10-10
+
+### Added
+- **Measured heat gains.** Heat that can be measured is counted separately from the learned "base gains":
+  - **inverter losses**: new input, using `sensor.solis_loss_power` (PV + battery − AC output). It is
+    counted 100 % as heat (winter balance 0.8 ± 0.4), about 100 W standby plus 5 % of throughput;
+  - sun through the windows, from the weather-station radiation (1.5 W per W/m²);
+  - hot-water cylinder standing loss (1.5 W/K × tank − room).
+
+  Forecasts use hour-of-day profiles and Solcast. A new **Heat gains now** sensor shows the breakdown and
+  whether every source is available. See `docs/heat_gains.md`.
+- **House electricity** input, using `sensor.house_power` (AC-side house load from
+  `docs/ha/packages/energy.yaml`). Heat pump, EV charger and loft IT are subtracted. It counts **0 %** as
+  heat by default: last winter's daily balance showed no measurable effect (0.03 ± 0.08), and 0.7 made
+  the fit clearly worse. The share is an option and will be learned from clean data later.
+
+### Changed
+- Priors depend on the configured gain sources:
+  - with measured inverter losses: **UA 90 W/K, base gains 70 W** (winter 2025/26 daily balance);
+  - otherwise unchanged at 94 W/K and 440 W.
+
+  **Existing installations:** after mapping the new inputs, set *Heat loss coefficient* 90 and *Base
+  internal gains* 70 under Configure, if you ever saved the options.
+- Battery-power loss estimate (4.5 %) is now only a fallback without an inverter-loss sensor.
+
+### Fixed (review round 10, before release)
+- Learned base gains, profiles and the night regression restart when the gain sources change. The day
+  of the change is not learned from.
+- An unavailable gain source makes the hour incomplete instead of adding 0 W. Days with incomplete gains
+  are not learned from.
+- An unavailable heat-pump, EV or outside-load meter no longer turns their consumption into household
+  heat.
+- Free-cooling capacity estimate corrected for measured gains.
+- Measured gains no longer count towards the "no heating that day" check.
+- Sun forecast only with a radiation sensor.
+- Stale house/inverter readings (> 2 h) rejected.
+- Stricter loading of saved profiles.
+
 ## [0.5.0] - 2026-10-08
 
 ### Added

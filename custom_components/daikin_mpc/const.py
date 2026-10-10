@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
-from typing import Final
+from typing import Any, Final
 
 from .core.telemetry import Role
 
@@ -53,10 +54,12 @@ SUGGESTED: Final[dict[str, str]] = {
     Role.DHW_ELEC_KWH.value: "sensor.bridge0_meters_electricity_consumed_compressor_dhw",
     # heat-gain sources (core/gains.py)
     Role.SOLAR.value: "sensor.ecowitt_solar_radiation",
-    # Role.HOUSE_W: not suggested yet: neither sensor.solis_house_load (misses AC-coupled PV supply)
-    # nor sensor.house_power (includes battery charging) is a clean consumption signal (10 Oct 2026).
+    # AC-side house load from the energy package (docs/ha/packages/energy.yaml): grid + Solis AC +
+    # roof + shed; excludes the inverter's losses, which come from sensor.solis_loss_power.
+    Role.HOUSE_W.value: "sensor.house_power",
     Role.EV_W.value: "sensor.hypervolt_ev_power",
     Role.OUTSIDE_W.value: "sensor.roof_loft_it_power",
+    Role.INVERTER_LOSS_W.value: "sensor.solis_loss_power",
     Role.BATTERY_W.value: "sensor.solis_battery_power",
     Role.TANK_C.value: "sensor.bridge0_dhw_temperature_r5t_dhw_tank",
     CONF_SOLCAST: "sensor.solcast_pv_forecast_forecast_today, sensor.solcast_pv_forecast_forecast_tomorrow",
@@ -65,12 +68,24 @@ SUGGESTED: Final[dict[str, str]] = {
     CONF_PREDHEAT_H8: "predheat.internal_temp_h8",
 }
 
-# Base gains = gains not measured by a mapped source. 440 W with no gain source mapped; with sun,
-# battery and tank losses measured (winter means 51 + 62 + 37 W) ≈ 290 W; it would drop further once
-# household electricity is measured cleanly.
-DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 290.0, CONF_C: 5.5}
+# Base gains = gains not measured by a mapped source, so the prior depends on what is measured.
+# Without measured inverter losses: the offline fit of all internal gains (docs/offline_fit_report.md).
+DEFAULT_PRIORS: Final = {CONF_UA: 94.0, CONF_GAINS: 440.0, CONF_C: 5.5}
+# With measured inverter losses (plus sun and tank): winter 2025/26 daily energy balance (91 heating
+# days, inverter losses' winter mean 239 W): UA 90 W/K, base gains 50-90 W (docs/heat_gains.md).
+# Household electricity counts 0 by default, so its average share is part of these base gains.
+DEFAULT_PRIORS_MEASURED_GAINS: Final = {CONF_UA: 90.0, CONF_GAINS: 70.0, CONF_C: 5.5}
+
+
+def default_priors(mapping: Mapping[str, Any]) -> dict[str, float]:
+    """Priors matching the configured gain sources (used while the options hold none)."""
+    if mapping.get(Role.INVERTER_LOSS_W.value):
+        return dict(DEFAULT_PRIORS_MEASURED_GAINS)
+    return dict(DEFAULT_PRIORS)
+
+
 DEFAULT_GAINS: Final = {
-    CONF_GAIN_HOUSEHOLD: 0.7,
+    CONF_GAIN_HOUSEHOLD: 0.0,
     CONF_GAIN_SOLAR: 1.5,
     CONF_GAIN_BATTERY: 0.045,
     CONF_GAIN_TANK: 1.5,

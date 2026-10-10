@@ -59,6 +59,7 @@ ROLE_UNITS: dict[Role, dict[str, Callable[[float], float]]] = {
     Role.HOUSE_W: _POWER,
     Role.EV_W: _POWER,
     Role.OUTSIDE_W: _POWER,
+    Role.INVERTER_LOSS_W: _POWER,
     Role.BATTERY_W: _POWER,
     Role.TANK_C: _TEMP,
 }

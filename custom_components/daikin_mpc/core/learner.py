@@ -65,18 +65,27 @@ class BuildingLearner:
         return {n: float(math.sqrt(max(v, 0.0))) for n, v in zip(self.NAMES, np.diag(self.p), strict=True)}
 
     def update_day(
-        self, ti: float, to: float, heat_kwh: float, dti_next: float, day_h: float = 24.0
+        self,
+        ti: float,
+        to: float,
+        heat_kwh: float,
+        dti_next: float,
+        day_h: float = 24.0,
+        gains_kwh: float = 0.0,
     ) -> UpdateResult:
         """Update with one complete day of ``day_h`` hours (23/25 on daylight-saving change days).
 
+        ``gains_kwh``: measured heat gains beyond the learned base gains; they enter the balance like
+        heat-pump heat but do not count towards the "heating that day" threshold.
         Returns whether it was accepted and why not.
         """
-        if not all(math.isfinite(v) for v in (ti, to, heat_kwh, dti_next, day_h)) or not 20 <= day_h <= 28:
+        vals = (ti, to, heat_kwh, dti_next, day_h, gains_kwh)
+        if not all(math.isfinite(v) for v in vals) or not 20 <= day_h <= 28:
             return self._reject("non-finite input")
         if heat_kwh < self.cfg.min_heat_kwh:
             return self._reject("no heating that day")
         x = np.array([ti - to, -1.0, dti_next / day_h])
-        y = heat_kwh * 1000.0 / day_h
+        y = (heat_kwh + gains_kwh) * 1000.0 / day_h
         lam = self.cfg.forgetting
         r = self.cfg.noise_w**2
         p_pred = self.p / lam
@@ -113,6 +122,15 @@ class BuildingLearner:
         self.p[:, 2] = 0.0
         self.p[2, 2] = sd_wh_per_k**2
         return True
+
+    def rebase_gains(self, gains_w: float, sd_w: float) -> None:
+        """Restart the base-gains estimate from a prior (the measured-gains basis changed, so the old
+        estimate describes a different quantity). UA and C are kept; the cross-covariances are reset."""
+        lo, hi = self.cfg.bounds["gains"]
+        self.theta[1] = float(np.clip(gains_w, lo, hi))
+        self.p[1, :] = 0.0
+        self.p[:, 1] = 0.0
+        self.p[1, 1] = sd_w**2
 
     def _reject(self, reason: str, resid: float = float("nan")) -> UpdateResult:
         self.rejected += 1

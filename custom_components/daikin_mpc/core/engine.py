@@ -20,7 +20,17 @@ from .capacity_learner import CapacityEstimate, CapacityLearner
 from .cop_learner import CopLearner
 from .cost_model import CostProvider, TariffPeriod, period_value
 from .emitter_model import RadiatorParams
-from .gains import GAIN_ROLES, GainsBreakdown, GainsConfig, GainsForecaster, measured_gains, pv_at
+from .gains import (
+    GainsBreakdown,
+    GainsConfig,
+    GainsForecaster,
+    gains_basis,
+    gains_complete,
+    mapped,
+    mapped_gain_roles,
+    measured_gains,
+    pv_at,
+)
 from .heatpump_model import CopCurve
 from .learner import BuildingLearner, LearnerConfig
 from .optimiser import OptimiserConfig, PlanInputs, Recommendation, recommend
@@ -110,6 +120,7 @@ class EngineStatus:
     cost_source: str = ""
     gains_now: GainsBreakdown | None = None
     gains_sources: tuple[str, ...] = ()
+    gains_complete: bool | None = None  # every configured gain source available (None: none configured)
     solar_ratio: float | None = None
     c_source: str = "prior"
     capacity_nights: int = 0
@@ -157,6 +168,9 @@ class ShadowEngine:
         self.last_forecast: Forecast | None = None
         self._tz: tzinfo | None = None
         self._last_forecast_hour: datetime | None = None
+        # what the measured gains contain (see gains_basis); the day it last changed is not learned from
+        self._gains_basis: str | None = None
+        self._basis_changed_day: str | None = None
 
     # --- helpers ---------------------------------------------------------------------------
     def _new_learner(self) -> BuildingLearner:
@@ -170,7 +184,8 @@ class ShadowEngine:
         self._recent_hours = [*self._recent_hours, h][-3:]
         if not self.cfg.learning_enabled or len(self._recent_hours) < 3:
             return
-        if self.capacity.add(*self._recent_hours):
+        before, h0, h1 = self._recent_hours
+        if self.capacity.add(before, h0, h1, ua=self.learner.params.ua_w_per_k):
             est = self.capacity.estimate(self.learner.params.ua_w_per_k)
             if est is not None and self.learner.set_capacity(est.c_wh_per_k, est.sd_wh_per_k):
                 self.capacity_estimate = est
@@ -208,12 +223,20 @@ class ShadowEngine:
         heating_enabled = s.get(Role.HEATING_ENABLED)
         hz = s.get(Role.HZ)
 
-        # 0. measured gains beyond the base gains; profiles for their forecast
+        # 0. measured gains beyond the base gains; profiles for their forecast. With any gain source
+        # configured, each hour records whether all of them were available ("gains_ok"); the gains are
+        # only recorded while complete, so an outage never books too little heat.
         self.pv_forecast = pv_forecast
+        self._check_gains_basis(gains_basis(s, self.cfg.gains), t)
         self.gains_now = measured_gains(s, self.cfg.gains)
+        complete = gains_complete(s, self.cfg.gains) if mapped_gain_roles(s) else None
         if self.cfg.learning_enabled:
             self.gains_fc.learn(s, self._pv_at(t))
-        extras = {"gains_w": self.gains_now.total_w} if self._gain_sources(s) else None
+        extras: dict[str, float] | None = None
+        if complete is not None:
+            extras = {"gains_ok": 1.0 if complete else 0.0}
+            if complete:
+                extras["gains_w"] = self.gains_now.total_w
 
         # 1. aggregation and learning
         for h in self.hours.add(s, extras):
@@ -326,6 +349,7 @@ class ShadowEngine:
             cop_learned_days=self.cop_learner.days,
             gains_now=self.gains_now,
             gains_sources=self._gain_sources(s),
+            gains_complete=complete,
             solar_ratio=self.gains_fc.solar_ratio if s.get(Role.SOLAR) is not None else None,
             c_source=(
                 f"free-cooling nights ({self.capacity_estimate.nights})"
@@ -342,18 +366,55 @@ class ShadowEngine:
         sb = self.cop_learner.standby_w
         return sb if sb is not None else self.cfg.standby_w
 
+    def _check_gains_basis(self, basis: str, t: datetime) -> None:
+        """Start the gain-dependent learning again when the measured-gains basis changes.
+
+        The learned base gains are "all heat not measured": mapping a new source (or changing a factor)
+        changes that quantity, so the old estimate, the hour-of-day profiles and the night regression
+        would otherwise count the new source twice. UA and C are kept. The day of the change (mixed
+        bases) is not learned from.
+        """
+        if basis == self._gains_basis:
+            return
+        previous, self._gains_basis = self._gains_basis, basis
+        if previous is None and not (basis and self.learner.updates > 0):
+            return  # first start: nothing was learned on another basis
+        fc = self.gains_fc
+        self.gains_fc = GainsForecaster(
+            self.cfg.gains, solar_ratio=fc.solar_ratio, ratio_samples=fc.ratio_samples
+        )
+        if self.learner.updates > 0:
+            self.learner.rebase_gains(self.cfg.gains_w, self.cfg.prior_sd[1])
+        self.capacity = CapacityLearner()
+        self.capacity_estimate = None
+        self._recent_hours = []
+        self.pending_day = None
+        local = t.astimezone(self._tz) if self._tz is not None and t.tzinfo is not None else t
+        self._basis_changed_day = local.date().isoformat()
+
     def _on_day(self, day: DayRecord) -> None:
         # The energy balance needs the next day's mean temperature (ΔTi), so update one day late.
         prev, self.pending_day, self.last_day = self.pending_day, day, day
         if not self.cfg.learning_enabled:
             return
+        # the measured gains must cover the whole day, on one basis (else the balance lacks heat)
+        gains_ok = (prev.gains_coverage is None or prev.gains_coverage >= 0.95) if prev is not None else False
         # ΔTi is only meaningful between consecutive dates; a gap (rejected day, outage) breaks the pair
-        if prev is not None and date.fromisoformat(day.day) - date.fromisoformat(prev.day) == timedelta(
-            days=1
+        if (
+            prev is not None
+            and gains_ok
+            and prev.day != self._basis_changed_day
+            and date.fromisoformat(day.day) - date.fromisoformat(prev.day) == timedelta(days=1)
         ):
             # measured gains act like heat input: the learner's gains are then the unmeasured base only
-            heat_kwh = prev.heat_kwh + prev.extra_gains_w * prev.length_h / 1000
-            self.learner.update_day(prev.ti, prev.to, heat_kwh, day.ti - prev.ti, prev.length_h)
+            self.learner.update_day(
+                prev.ti,
+                prev.to,
+                prev.heat_kwh,
+                day.ti - prev.ti,
+                prev.length_h,
+                gains_kwh=prev.extra_gains_w * prev.length_h / 1000,
+            )
         # standby once per day, whether or not the day also yields a COP sample
         self.cop_learner.update_standby(day.standby_w)
         if day.heating_ext_kwh is not None and self.cop_learner.update_day(
@@ -417,17 +478,19 @@ class ShadowEngine:
 
     @staticmethod
     def _gain_sources(s: ValidatedSnapshot) -> tuple[str, ...]:
-        return tuple(r.value for r in GAIN_ROLES if s.get(r) is not None)
+        return tuple(r.value for r in mapped_gain_roles(s) if s.get(r) is not None)
 
     def _pv_at(self, t: datetime) -> float | None:
         return pv_at(self.pv_forecast, t) if self.pv_forecast else None
 
     def _gains_steps(self, s: ValidatedSnapshot, t: datetime, n: int) -> list[float] | None:
-        """Forecast extra gains per step (None when no gain source is mapped)."""
-        if not self._gain_sources(s):
+        """Forecast extra gains per step (None when no gain source is configured)."""
+        if not mapped_gain_roles(s):
             return None
         times = [add_hours(t, STEP_H * (i + 0.5)) for i in range(n)]
-        return self.gains_fc.forecast(times, self.gains_now, self.pv_forecast, s.get(Role.SOLAR))
+        return self.gains_fc.forecast(
+            times, self.gains_now, self.pv_forecast, s.get(Role.SOLAR), solar=mapped(s, Role.SOLAR)
+        )
 
     @staticmethod
     def _to_steps(
@@ -467,6 +530,8 @@ class ShadowEngine:
             "cop_learner": self.cop_learner.to_dict(),
             "capacity": self.capacity.to_dict(),
             "gains": self.gains_fc.to_dict(),
+            "gains_basis": self._gains_basis,
+            "basis_changed_day": self._basis_changed_day,
         }
 
     def load_dict(self, d: dict[str, Any]) -> list[str]:
@@ -503,6 +568,7 @@ class ShadowEngine:
             # nothing learned yet: the configured priors (which may have changed) apply
             self.learner = self._new_learner()
         sections: list[tuple[str, Any]] = [
+            ("gains basis", lambda: self._load_basis(d)),
             ("class counts", lambda: self._load_counts(d)),
             ("error statistics", lambda: self._load_errors(d)),
             ("setpoint profile", lambda: self._load_profile(d)),
@@ -525,6 +591,14 @@ class ShadowEngine:
                 self.cop_learner = CopLearner(self.cop_prior)
                 warn.append("COP learner state invalid or from an older version; using prior curve")
         return warn
+
+    def _load_basis(self, d: dict[str, Any]) -> None:
+        basis, changed = d.get("gains_basis"), d.get("basis_changed_day")
+        if basis is not None and not isinstance(basis, str):
+            raise ValueError("gains basis not a string")
+        if changed is not None:
+            changed = date.fromisoformat(str(changed)).isoformat()
+        self._gains_basis, self._basis_changed_day = basis, changed
 
     def _load_counts(self, d: dict[str, Any]) -> None:
         counts = Counter({str(k): int(v) for k, v in dict(d.get("class_counts") or {}).items()})
@@ -576,6 +650,7 @@ class ShadowEngine:
             ext_kwh=opt("ext_kwh", 0, 500),
             heating_ext_kwh=opt("heating_ext_kwh", 0, 500),
             extra_gains_w=num("extra_gains_w", 0, 5000, 0.0),
+            gains_coverage=opt("gains_coverage", 0, 1),
             standby_w=opt("standby_w", 0, 200),
             length_h=num("length_h", 23, 25, 24.0),
         )

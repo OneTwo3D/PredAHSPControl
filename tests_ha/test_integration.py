@@ -240,3 +240,41 @@ async def test_recommendation_uses_predbat_rates(hass: HomeAssistant, weather_ca
     assert len(rec.attributes["plan"]) == 24
     assert hass.states.get("sensor.daikin_mpc_expected_saving_24h") is not None
     assert hass.states.get("sensor.daikin_mpc_recommendation").state
+
+
+async def test_heat_gains_from_mapped_sources(hass: HomeAssistant, weather_calls) -> None:
+    """Measured inverter losses, sun and tank appear in "Heat gains now"; household counts 0 by default."""
+    _set_states(hass)
+    gain_states = {
+        "sensor.house_power": "800",
+        "sensor.solis_loss_power": "140",
+        "sensor.solis_battery_power": "2000",
+        "sensor.ecowitt_solar_radiation": "100",
+        "sensor.roof_loft_it_power": "110",
+        "sensor.hypervolt_ev_power": "0",
+        "sensor.bridge0_dhw_temperature_r5t_dhw_tank": "50.4",
+    }
+    for e, v in gain_states.items():
+        hass.states.async_set(e, v)
+    data = {k: v for k, v in SUGGESTED.items() if v in STATES or v in gain_states}
+    assert data["inverter_loss_w"] == "sensor.solis_loss_power" and data["house_w"] == "sensor.house_power"
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+    await hass.async_block_till_done()
+
+    g = hass.states.get("sensor.daikin_mpc_heat_gains_now")
+    assert g is not None
+    # inverter 140 (measured, not 4.5 % of the 2 kW battery) + sun 1.5 × 100 + tank 1.5 × (50.4 − 20.4)
+    assert float(g.state) == pytest.approx(140 + 150 + 45, abs=1)
+    assert g.attributes["inverter_w"] == pytest.approx(140.0)
+    assert g.attributes["household_w"] == 0.0
+    assert g.attributes["complete"] is True
+    assert "inverter_loss_w" in g.attributes["sources"] and "house_w" in g.attributes["sources"]
+    # priors for measured gains (inverter losses configured, no options saved)
+    ua = hass.states.get("sensor.daikin_mpc_heat_loss_coefficient")
+    base = hass.states.get("sensor.daikin_mpc_base_internal_gains")
+    assert float(ua.state) == pytest.approx(90.0) and float(base.state) == pytest.approx(70.0)
+    assert await hass.config_entries.async_unload(entry.entry_id)
