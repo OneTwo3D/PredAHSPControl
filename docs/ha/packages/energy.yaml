@@ -213,6 +213,17 @@ sensor:
     max_sub_interval:
       minutes: 1
 
+  - platform: integration
+    source: sensor.hypervolt_ev_power
+    name: EV charger energy total
+    unique_id: energy_ev_charger_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+
 # --- daily / periodic counters ------------------------------------------------------------------
 utility_meter:
   total_house_consumption_new:
