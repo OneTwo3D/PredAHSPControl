@@ -1,18 +1,5 @@
-# Canonical energy sensors — PHASE A (new sensors only; nothing existing is changed)
-# Plan and rationale: docs/energy_sensors_plan.md
-#
-# Install:
-#   1. configuration.yaml:   homeassistant:
-#                              packages: !include_dir_named packages
-#   2. copy this file to /config/packages/energy.yaml
-#   3. Developer tools → YAML → Check configuration, then restart Home Assistant.
-#
-# Sign conventions: grid + = import; Solis AC + = inverter delivering to the house (− = charging from
-# the grid); battery + = discharging; generation and loads ≥ 0.
-#
-# The four sensors ending in "_new" are the replacements for the faulty helpers solis_power,
-# pv_power, house_power and total_house_consumption. Phase B (after 3–7 days of comparison) gives
-# them the old entity IDs; until then the old helpers stay untouched.
+# Canonical energy sensors - PHASE A (adds new sensors only). Plan: docs/energy_sensors_plan.md
+# Location: /homeassistant/packages/energy.yaml (next to configuration.yaml)
 
 template:
   - sensor:
@@ -23,7 +10,7 @@ template:
         unit_of_measurement: W
         device_class: power
         state_class: measurement
-        # Glow/Hildebrand smart meter; Solis CT (≈ −0.94 × smart meter + 53 W) only as fallback.
+        # Glow/Hildebrand smart meter; Solis CT (~ -0.94 x smart meter + 53 W) only as fallback.
         state: >
           {% set sm = states('sensor.smart_meter_electricity_power') %}
           {% if is_number(sm) %}{{ sm | float | round(0) }}
@@ -73,7 +60,7 @@ template:
         unit_of_measurement: W
         device_class: power
         state_class: measurement
-        # Conversion + standby losses of the Solis (inside the house): PV + battery − AC output.
+        # Conversion + standby losses of the Solis (inside the house): PV + battery - AC output.
         state: >
           {{ [states('sensor.solis_pv_total_power') | float(0)
               + states('sensor.battery_power') | float(0)
@@ -93,7 +80,7 @@ template:
         availability: "{{ is_number(states('sensor.kwh_meter_power')) }}"
 
       # Split of the metered heat-pump power. The 3-way valve rests on "tank" when idle, so the
-      # DHW demand signal is used (4–10 Oct 2026: 6.8 kWh DHW, 2.3 kWh standby, heating ≈ 0).
+      # DHW demand signal is used (4-10 Oct 2026: 6.8 kWh DHW, 2.3 kWh standby, heating ~ 0).
       - name: "Heat pump DHW power"
         unique_id: energy_heat_pump_dhw_power
         default_entity_id: sensor.heat_pump_dhw_power
