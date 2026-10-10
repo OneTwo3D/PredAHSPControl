@@ -124,3 +124,9 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
 * 10 Oct 2026: phase A package installed (28 entities live).
 * 10 Oct 2026: Energy dashboard updated: grid export -> smart meter; devices: heat pump (parent
   `ashp_daily_electricity`) with heating / hot water / standby sub-devices, and Solis inverter losses.
+* 10 Oct 2026: phase B done. Old YAML templates (house_load_today, ashp_{heating,dhw}_power_consumption_*)
+  and UI helpers (house_power, pv_power, solis_power, total_house_consumption, plus the broken
+  battery_charge_discharge_power and number.battery_charge_direction_last_state) removed; the new
+  entities renamed to the old IDs (history continues under the old IDs). Energy page validates clean.
+* Open: Predbat apps.yaml (export_today, grid_power + grid_power_invert, drop load_power_1); PredAI
+  uninstall; Daikin MPC HOUSE_W mapping arrives with v0.6.0 (the running v0.5.0 has no gains roles).
