@@ -174,7 +174,8 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
     MpcSensorDescription(
         key="energy_24h",
         name="Predicted heat pump electricity 24h",
-        device_class=SensorDeviceClass.ENERGY,
+        # a forecast, not a meter: HA's energy device class only allows totals, so none is set; the
+        # "measurement" state class keeps its long-term statistics (and keeps it off the Energy page)
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,

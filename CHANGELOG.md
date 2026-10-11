@@ -5,6 +5,13 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.1] - 2026-10-11
+
+### Fixed
+- HA warning "state class 'measurement' … impossible considering device class ('energy')" for
+  *Predicted heat pump electricity 24h*: the forecast no longer has the energy device class (that class
+  only allows meter totals); it keeps the measurement state class and its long-term statistics.
+
 ## [0.6.0] - 2026-10-10
 
 ### Added

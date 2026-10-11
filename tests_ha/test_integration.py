@@ -69,7 +69,7 @@ async def test_config_flow_rejects_missing_entity(hass: HomeAssistant) -> None:
     assert result["errors"] == {"ti": "entity_not_found"}
 
 
-async def test_setup_creates_sensors_and_only_reads(hass: HomeAssistant, weather_calls) -> None:
+async def test_setup_creates_sensors_and_only_reads(hass: HomeAssistant, weather_calls, caplog) -> None:
     _set_states(hass)
     entry = MockConfigEntry(domain=DOMAIN, data={k: v for k, v in SUGGESTED.items() if v in STATES})
     entry.add_to_hass(hass)
@@ -97,6 +97,8 @@ async def test_setup_creates_sensors_and_only_reads(hass: HomeAssistant, weather
     e = hass.states.get("sensor.daikin_mpc_predicted_heat_pump_electricity_24h")
     assert e is not None and float(e.state) >= 0 and e.attributes["source"] == "weather"
     assert len(e.attributes["hourly"]) == 24
+    assert "device_class" not in e.attributes and e.attributes["state_class"] == "measurement"
+    assert "impossible considering device class" not in caplog.text
     assert e.attributes["standby_w"] == pytest.approx(19.0)
     assert float(e.state) >= 0.019 * 24 - 1e-6  # includes standby
     assert hass.states.get("sensor.daikin_mpc_standby_power") is not None
