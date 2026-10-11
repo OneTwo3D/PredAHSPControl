@@ -130,3 +130,5 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   entities renamed to the old IDs (history continues under the old IDs). Energy page validates clean.
 * Open: Predbat apps.yaml (export_today, grid_power + grid_power_invert, drop load_power_1); PredAI
   uninstall; Daikin MPC HOUSE_W mapping arrives with v0.6.0 (the running v0.5.0 has no gains roles).
+* 11 Oct 2026: Daikin MPC 0.6.0 installed; gain inputs mapped (house_power, solis_loss_power, solar radiation,
+  EV, loft IT, tank); options set to UA 90 W/K, base gains 70 W. Heat gains now 220 W (inverter 181, tank 39).
