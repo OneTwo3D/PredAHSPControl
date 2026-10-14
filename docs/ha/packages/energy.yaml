@@ -70,6 +70,26 @@ template:
              and is_number(states('sensor.battery_power'))
              and is_number(states('sensor.solis_active_power')) }}
 
+      - name: "Solis standby power"
+        unique_id: energy_solis_standby_power
+        default_entity_id: sensor.solis_standby_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # Fixed part of the Solis losses (fans, control, idle conversion stage; measured 115-130 W).
+        # The proportional part (~5 % of PV + battery throughput) is modelled by Predbat's loss settings,
+        # so it is removed here; capped at 150 W so charging losses are never counted twice.
+        # Predbat adds this to the house load (load_today / load_power_1).
+        state: >
+          {% set loss = states('sensor.solis_loss_power') | float(0) %}
+          {% set thr = (states('sensor.battery_power') | float(0)) | abs
+                       + states('sensor.solis_pv_total_power') | float(0) %}
+          {{ [[loss - 0.05 * thr, 0] | max, 150] | min | round(0) }}
+        availability: >
+          {{ has_value('sensor.solis_loss_power')
+             and is_number(states('sensor.battery_power'))
+             and is_number(states('sensor.solis_pv_total_power')) }}
+
       - name: "Heat pump power"
         unique_id: energy_heat_pump_power
         default_entity_id: sensor.heat_pump_power
@@ -183,6 +203,16 @@ sensor:
     max_sub_interval:
       minutes: 1
   - platform: integration
+    source: sensor.solis_standby_power
+    name: Solis standby energy total
+    unique_id: energy_solis_standby_energy_total
+    method: left
+    round: 3
+    unit_prefix: k
+    unit_time: h
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
     source: sensor.heat_pump_dhw_power
     name: Heat pump DHW energy total
     unique_id: energy_heat_pump_dhw_energy_total
@@ -233,6 +263,10 @@ utility_meter:
   house_load_excl_heating_daily:
     unique_id: energy_house_load_excl_heating_daily
     source: sensor.house_energy_excl_heating_total
+    cycle: daily
+  solis_standby_energy_daily:
+    unique_id: energy_solis_standby_energy_daily
+    source: sensor.solis_standby_energy_total
     cycle: daily
   solis_loss_energy_daily:
     unique_id: energy_solis_loss_energy_daily
