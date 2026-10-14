@@ -80,6 +80,9 @@ template:
         # The proportional part (~5 % of PV + battery throughput) is modelled by Predbat's loss settings,
         # so it is removed here; capped at 150 W so charging losses are never counted twice.
         # Predbat adds this to the house load (load_today / load_power_1).
+        # Off-test 14 Oct 2026: true idle standby ~80 W (35 W battery + 45 W grid); the Solis AC reading
+        # over-states its idle grid draw by ~50 W, so this reads ~50 W high and house_power ~50 W low.
+        # The sum house_power + this sensor is still right (grid + PV + battery), which is what Predbat uses.
         state: >
           {% set loss = states('sensor.solis_loss_power') | float(0) %}
           {% set thr = (states('sensor.battery_power') | float(0)) | abs

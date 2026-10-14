@@ -132,3 +132,12 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   uninstall; Daikin MPC HOUSE_W mapping arrives with v0.6.0 (the running v0.5.0 has no gains roles).
 * 11 Oct 2026: Daikin MPC 0.6.0 installed; gain inputs mapped (house_power, solis_loss_power, solar radiation,
   EV, loft IT, tank); options set to UA 90 W/K, base gains 70 W. Heat gains now 220 W (inverter 181, tank 39).
+* 14 Oct 2026: Solis off-test (23:09-23:20 BST, battery held at 1 A, other loads constant). Smart meter
+  418 W with the Solis off, 463 W with it on and idle, while the Solis reported -90..-100 W AC and +35 W
+  battery. True idle standby ~80 W (±20 W) instead of the ~130 W in `solis_loss_power`: the Solis AC
+  reading is ~50 W too negative at low power, so `solis_standby_power` reads ~50 W high and `house_power`
+  ~50 W low at idle. Their sum (grid + PV + battery) is unaffected, so Predbat gets
+  `load_today: + sensor.solis_standby_energy_daily` and `load_power_1: sensor.solis_standby_power`.
+  The heat model is unaffected (inverter losses count 100 % as heat either way). Predbat's manual freeze
+  charge did not apply via the API ("+Wed 23:00"); the test used discharge current 1 A with Predbat
+  read-only (the Solis ignores 0 A).
