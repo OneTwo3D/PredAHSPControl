@@ -313,6 +313,7 @@ utility_meter:
     source: sensor.heat_pump_standby_energy_total
     cycle: daily
   # Compressor starts per day (short-cycling check), from the P1P2 lifetime counter.
+  # Entity ID follows the name: sensor.ashp_compressor_starts_today.
   ashp_compressor_starts_daily:
     unique_id: energy_ashp_compressor_starts_daily
     name: ASHP compressor starts today

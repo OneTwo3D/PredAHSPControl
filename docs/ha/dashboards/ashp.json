@@ -357,7 +357,7 @@
        "type": "custom:mini-graph-card",
        "name": "Compressor starts per day",
        "entities": [
-        "sensor.ashp_compressor_starts_daily"
+        "sensor.ashp_compressor_starts_today"
        ],
        "hours_to_show": 336,
        "group_by": "date",
