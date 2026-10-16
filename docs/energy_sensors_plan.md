@@ -141,3 +141,10 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   The heat model is unaffected (inverter losses count 100 % as heat either way). Predbat's manual freeze
   charge did not apply via the API ("+Wed 23:00"); the test used discharge current 1 A with Predbat
   read-only (the Solis ignores 0 A).
+* 16 Oct 2026: DHW heat-produced meters renamed `ahsp_` -> `ashp_` (the COP templates never fired);
+  monthly/annual consumption meters calibrated with the pre-10-Oct use (HomeWizard meter minus ~16 W
+  standby, split by Daikin's DHW/heating ratio): DHW month +8.9, DHW year +253, heating year +494.7 kWh.
+  New `packages/ashp_cop.yaml` (12 COP templates, recalculated on heat or electricity change, unknown
+  instead of stale values) and `ashp_compressor_starts_daily`. ASHP dashboard rebuilt
+  (`docs/ha/dashboards/ashp.json`). Predbat `load_ml_enable: false` until ~11 Nov (ML only sees history
+  since the standby sensor joined `load_today` on 14 Oct).

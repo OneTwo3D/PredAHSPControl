@@ -1,0 +1,152 @@
+# ASHP COP sensors (replaces the 12 trigger templates in your own template file - delete those in the
+# same restart; the unique_ids are the same, so entity IDs and history are kept).
+# Changes against the old version:
+#  - recalculated when either the heat produced or the electricity changes (the old ones only on a whole
+#    kWh of heat, so they could stay hours or days out of date);
+#  - 'unknown' instead of the last old value when the period has no meaningful use (< 0.1 kWh) or no
+#    heat yet (the Daikin heat counters step in whole kWh, so a daily COP is coarse early in the day).
+# Total COP = all heat produced / the whole heat-pump meter, standby included.
+template:
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_heating_energy_produced_daily, sensor.ashp_heating_power_consumption_daily]
+    sensor:
+      - name: "ASHP Heating COP (daily)"
+        unique_id: ashp_heating_cop_daily
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_heating_energy_produced_daily') | float(0) %}
+          {% set elec = states('sensor.ashp_heating_power_consumption_daily') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_heating_energy_produced_weekly, sensor.ashp_heating_power_consumption_weekly]
+    sensor:
+      - name: "ASHP Heating COP (weekly)"
+        unique_id: ashp_heating_cop_weekly
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_heating_energy_produced_weekly') | float(0) %}
+          {% set elec = states('sensor.ashp_heating_power_consumption_weekly') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_heating_energy_produced_monthly, sensor.ashp_heating_power_consumption_monthly]
+    sensor:
+      - name: "ASHP Heating COP (monthly)"
+        unique_id: ashp_heating_cop_monthly
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_heating_energy_produced_monthly') | float(0) %}
+          {% set elec = states('sensor.ashp_heating_power_consumption_monthly') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_heating_energy_produced_annually, sensor.ashp_heating_power_consumption_annually]
+    sensor:
+      - name: "ASHP Heating COP (annually)"
+        unique_id: ashp_heating_cop_annually
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_heating_energy_produced_annually') | float(0) %}
+          {% set elec = states('sensor.ashp_heating_power_consumption_annually') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_dhw_energy_produced_daily, sensor.ashp_dhw_power_consumption_daily]
+    sensor:
+      - name: "ASHP DHW COP (daily)"
+        unique_id: ashp_dhw_cop_daily
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_dhw_energy_produced_daily') | float(0) %}
+          {% set elec = states('sensor.ashp_dhw_power_consumption_daily') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_dhw_energy_produced_weekly, sensor.ashp_dhw_power_consumption_weekly]
+    sensor:
+      - name: "ASHP DHW COP (weekly)"
+        unique_id: ashp_dhw_cop_weekly
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_dhw_energy_produced_weekly') | float(0) %}
+          {% set elec = states('sensor.ashp_dhw_power_consumption_weekly') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_dhw_energy_produced_monthly, sensor.ashp_dhw_power_consumption_monthly]
+    sensor:
+      - name: "ASHP DHW COP (monthly)"
+        unique_id: ashp_dhw_cop_monthly
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_dhw_energy_produced_monthly') | float(0) %}
+          {% set elec = states('sensor.ashp_dhw_power_consumption_monthly') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_dhw_energy_produced_annually, sensor.ashp_dhw_power_consumption_annually]
+    sensor:
+      - name: "ASHP DHW COP (annually)"
+        unique_id: ashp_dhw_cop_annually
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_dhw_energy_produced_annually') | float(0) %}
+          {% set elec = states('sensor.ashp_dhw_power_consumption_annually') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_total_energy_produced_daily, sensor.ashp_daily_electricity]
+    sensor:
+      - name: "ASHP Total COP (daily)"
+        unique_id: ashp_total_cop_daily
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_total_energy_produced_daily') | float(0) %}
+          {% set elec = states('sensor.ashp_daily_electricity') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_total_energy_produced_weekly, sensor.ashp_weekly_power_consumption_total]
+    sensor:
+      - name: "ASHP Total COP (weekly)"
+        unique_id: ashp_total_cop_weekly
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_total_energy_produced_weekly') | float(0) %}
+          {% set elec = states('sensor.ashp_weekly_power_consumption_total') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_total_energy_produced_monthly, sensor.ashp_monthly_power_consumption_total]
+    sensor:
+      - name: "ASHP Total COP (monthly)"
+        unique_id: ashp_total_cop_monthly
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_total_energy_produced_monthly') | float(0) %}
+          {% set elec = states('sensor.ashp_monthly_power_consumption_total') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}
+
+  - trigger:
+      - platform: state
+        entity_id: [sensor.ashp_total_energy_produced_annually, sensor.ashp_annual_power_consumption_total]
+    sensor:
+      - name: "ASHP Total COP (annually)"
+        unique_id: ashp_total_cop_annually
+        state_class: measurement
+        state: >
+          {% set heat = states('sensor.ashp_total_energy_produced_annually') | float(0) %}
+          {% set elec = states('sensor.ashp_annual_power_consumption_total') | float(0) %}
+          {{ (heat / elec) | round(2) if elec > 0.1 and heat > 0 else none }}

@@ -1,0 +1,483 @@
+{
+ "views": [
+  {
+   "title": "Home",
+   "cards": [
+    {
+     "type": "entities",
+     "title": "Heat pump now",
+     "state_color": true,
+     "entities": [
+      {
+       "entity": "binary_sensor.bridge0_mode_compressor",
+       "name": "Compressor"
+      },
+      {
+       "entity": "sensor.bridge0_mode_compressor_rpm",
+       "name": "Compressor frequency"
+      },
+      {
+       "entity": "binary_sensor.bridge0_dhw_dhw_demand",
+       "name": "Hot water demand"
+      },
+      {
+       "entity": "binary_sensor.bridge0_mode_circulation_pump",
+       "name": "Circulation pump"
+      },
+      {
+       "entity": "binary_sensor.bridge0_mode_defrost_active",
+       "name": "Defrost"
+      },
+      {
+       "entity": "binary_sensor.bridge0_mode_buh",
+       "name": "Backup heater"
+      },
+      {
+       "entity": "sensor.kwh_meter_power",
+       "name": "Electrical power"
+      },
+      {
+       "entity": "sensor.bridge0_sensors_flow",
+       "name": "Water flow"
+      },
+      {
+       "entity": "sensor.bridge0_mode_errorcode1",
+       "name": "Error code"
+      }
+     ]
+    },
+    {
+     "type": "horizontal-stack",
+     "cards": [
+      {
+       "type": "gauge",
+       "entity": "sensor.kwh_meter_power",
+       "name": "Power",
+       "unit": "W",
+       "min": 0,
+       "max": 4000,
+       "severity": {
+        "green": 0,
+        "yellow": 1000,
+        "red": 2500
+       }
+      },
+      {
+       "type": "gauge",
+       "entity": "sensor.bridge0_sensors_temperature_r1t_hp2gas_water",
+       "name": "Leaving water",
+       "min": 10,
+       "max": 60,
+       "severity": {
+        "green": 10,
+        "yellow": 40,
+        "red": 50
+       }
+      },
+      {
+       "type": "conditional",
+       "conditions": [
+        {
+         "condition": "state",
+         "entity": "binary_sensor.bridge0_mode_compressor",
+         "state": "on"
+        }
+       ],
+       "card": {
+        "type": "gauge",
+        "entity": "sensor.bridge0_cop_cop_realtime",
+        "name": "COP now",
+        "min": 0,
+        "max": 7,
+        "severity": {
+         "green": 3.5,
+         "yellow": 2.5,
+         "red": 0
+        }
+       }
+      }
+     ]
+    },
+    {
+     "type": "custom:apexcharts-card",
+     "graph_span": "24h",
+     "header": {
+      "show": true,
+      "title": "Flow temperatures (24 h)",
+      "show_states": true,
+      "colorize_states": true
+     },
+     "yaxis": [
+      {
+       "decimals": 0
+      }
+     ],
+     "series": [
+      {
+       "entity": "sensor.bridge0_sensors_temperature_r1t_hp2gas_water",
+       "name": "Leaving water"
+      },
+      {
+       "entity": "sensor.bridge0_lwt_lwt_setpoint",
+       "name": "Leaving water target",
+       "curve": "stepline",
+       "stroke_dash": 4
+      },
+      {
+       "entity": "sensor.daikin_mpc_required_flow_temperature",
+       "name": "MPC required flow",
+       "curve": "stepline",
+       "stroke_dash": 2
+      },
+      {
+       "entity": "sensor.bridge0_sensors_temperature_r4t_return_water",
+       "name": "Return water"
+      },
+      {
+       "entity": "sensor.bridge0_sensors_temperature_outside",
+       "name": "Outside"
+      }
+     ]
+    },
+    {
+     "type": "custom:apexcharts-card",
+     "graph_span": "48h",
+     "header": {
+      "show": true,
+      "title": "Room (48 h)",
+      "show_states": true,
+      "colorize_states": true
+     },
+     "yaxis": [
+      {
+       "decimals": 1
+      }
+     ],
+     "series": [
+      {
+       "entity": "sensor.bridge0_sensors_temperature_room_wall",
+       "name": "Room"
+      },
+      {
+       "entity": "sensor.ashp_daikin_mpc_recommended_room_setpoint",
+       "name": "MPC recommended setpoint",
+       "curve": "stepline",
+       "stroke_dash": 4
+      }
+     ]
+    },
+    {
+     "type": "custom:apexcharts-card",
+     "graph_span": "48h",
+     "header": {
+      "show": true,
+      "title": "Hot water tank (48 h)",
+      "show_states": true,
+      "colorize_states": true
+     },
+     "yaxis": [
+      {
+       "decimals": 0
+      }
+     ],
+     "series": [
+      {
+       "entity": "sensor.bridge0_dhw_temperature_r5t_dhw_tank",
+       "name": "Tank"
+      },
+      {
+       "entity": "sensor.bridge0_dhw_dhw_setpoint",
+       "name": "Tank target",
+       "curve": "stepline",
+       "stroke_dash": 4
+      }
+     ]
+    },
+    {
+     "type": "glance",
+     "title": "Today",
+     "columns": 5,
+     "entities": [
+      {
+       "entity": "sensor.ashp_daily_electricity",
+       "name": "Electricity"
+      },
+      {
+       "entity": "sensor.ashp_heating_power_consumption_daily",
+       "name": "Heating"
+      },
+      {
+       "entity": "sensor.ashp_dhw_power_consumption_daily",
+       "name": "Hot water"
+      },
+      {
+       "entity": "sensor.heat_pump_standby_energy_daily",
+       "name": "Standby"
+      },
+      {
+       "entity": "sensor.ashp_total_energy_produced_daily",
+       "name": "Heat made"
+      }
+     ]
+    },
+    {
+     "type": "custom:apexcharts-card",
+     "graph_span": "7d",
+     "span": {
+      "end": "day"
+     },
+     "stacked": true,
+     "header": {
+      "show": true,
+      "title": "Electricity per day (7 days)"
+     },
+     "yaxis": [
+      {
+       "decimals": 1
+      }
+     ],
+     "series": [
+      {
+       "entity": "sensor.heat_pump_heating_energy_total",
+       "name": "Heating",
+       "type": "column",
+       "statistics": {
+        "type": "change",
+        "period": "day",
+        "align": "start"
+       },
+       "group_by": {
+        "func": "last",
+        "duration": "1d"
+       }
+      },
+      {
+       "entity": "sensor.heat_pump_dhw_energy_total",
+       "name": "Hot water",
+       "type": "column",
+       "statistics": {
+        "type": "change",
+        "period": "day",
+        "align": "start"
+       },
+       "group_by": {
+        "func": "last",
+        "duration": "1d"
+       }
+      },
+      {
+       "entity": "sensor.heat_pump_standby_energy_total",
+       "name": "Standby",
+       "type": "column",
+       "statistics": {
+        "type": "change",
+        "period": "day",
+        "align": "start"
+       },
+       "group_by": {
+        "func": "last",
+        "duration": "1d"
+       }
+      }
+     ]
+    },
+    {
+     "type": "vertical-stack",
+     "cards": [
+      {
+       "type": "glance",
+       "title": "COP hot water",
+       "columns": 4,
+       "entities": [
+        {
+         "entity": "sensor.ashp_dhw_cop_daily",
+         "name": "Day"
+        },
+        {
+         "entity": "sensor.ashp_dhw_cop_weekly",
+         "name": "Week"
+        },
+        {
+         "entity": "sensor.ashp_dhw_cop_monthly",
+         "name": "Month"
+        },
+        {
+         "entity": "sensor.ashp_dhw_cop_annually",
+         "name": "Year"
+        }
+       ]
+      },
+      {
+       "type": "glance",
+       "title": "COP heating",
+       "columns": 4,
+       "entities": [
+        {
+         "entity": "sensor.ashp_heating_cop_daily",
+         "name": "Day"
+        },
+        {
+         "entity": "sensor.ashp_heating_cop_weekly",
+         "name": "Week"
+        },
+        {
+         "entity": "sensor.ashp_heating_cop_monthly",
+         "name": "Month"
+        },
+        {
+         "entity": "sensor.ashp_heating_cop_annually",
+         "name": "Year"
+        }
+       ]
+      },
+      {
+       "type": "glance",
+       "title": "COP total (incl. standby)",
+       "columns": 4,
+       "entities": [
+        {
+         "entity": "sensor.ashp_total_cop_daily",
+         "name": "Day"
+        },
+        {
+         "entity": "sensor.ashp_total_cop_weekly",
+         "name": "Week"
+        },
+        {
+         "entity": "sensor.ashp_total_cop_monthly",
+         "name": "Month"
+        },
+        {
+         "entity": "sensor.ashp_total_cop_annually",
+         "name": "Year"
+        }
+       ]
+      },
+      {
+       "type": "custom:mini-graph-card",
+       "name": "Compressor starts per day",
+       "entities": [
+        "sensor.ashp_compressor_starts_daily"
+       ],
+       "hours_to_show": 336,
+       "group_by": "date",
+       "aggregate_func": "max",
+       "show": {
+        "graph": "bar",
+        "state": true
+       },
+       "decimals": 0
+      }
+     ]
+    },
+    {
+     "type": "vertical-stack",
+     "cards": [
+      {
+       "type": "markdown",
+       "title": "Daikin MPC (shadow mode)",
+       "content": "{{ states('sensor.ashp_daikin_mpc_recommendation') }}\n\nStatus: **{{ states('sensor.daikin_mpc_status') }}** \u00b7 training days: {{ states('sensor.daikin_mpc_training_days') }}"
+      },
+      {
+       "type": "entities",
+       "entities": [
+        {
+         "entity": "sensor.ashp_daikin_mpc_recommended_room_setpoint",
+         "name": "Recommended room setpoint"
+        },
+        {
+         "entity": "sensor.daikin_mpc_required_flow_temperature",
+         "name": "Required flow temperature"
+        },
+        {
+         "entity": "sensor.daikin_mpc_predicted_heating_electricity_24h",
+         "name": "Predicted heating electricity (24 h)"
+        },
+        {
+         "entity": "sensor.ashp_daikin_mpc_expected_saving_24h",
+         "name": "Expected saving (24 h)"
+        },
+        {
+         "entity": "sensor.daikin_mpc_estimated_cop",
+         "name": "Estimated COP"
+        },
+        {
+         "entity": "sensor.ashp_daikin_mpc_heat_gains_now",
+         "name": "Heat gains now"
+        },
+        {
+         "entity": "sensor.daikin_mpc_internal_gains",
+         "name": "Base internal gains (learned)"
+        },
+        {
+         "entity": "sensor.daikin_mpc_heat_loss_coefficient",
+         "name": "Heat loss coefficient"
+        },
+        {
+         "entity": "sensor.daikin_mpc_thermal_capacity",
+         "name": "Thermal capacity"
+        },
+        {
+         "entity": "sensor.daikin_mpc_predicted_room_temperature_6h",
+         "name": "Predicted room in 6 h"
+        },
+        {
+         "entity": "sensor.daikin_mpc_prediction_error_1h",
+         "name": "Prediction error 1 h"
+        },
+        {
+         "entity": "sensor.daikin_mpc_prediction_error_6h",
+         "name": "Prediction error 6 h"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "custom:collapsable-cards",
+     "title": "Lifetime counters",
+     "defaultOpen": false,
+     "cards": [
+      {
+       "type": "entities",
+       "entities": [
+        {
+         "entity": "sensor.bridge0_cop_cop_lifetime",
+         "name": "Lifetime COP (Daikin)"
+        },
+        {
+         "entity": "sensor.bridge0_meters_starts_compressor",
+         "name": "Compressor starts"
+        },
+        {
+         "entity": "sensor.bridge0_meters_hours_compressor_heating",
+         "name": "Compressor hours heating"
+        },
+        {
+         "entity": "sensor.bridge0_meters_hours_compressor_dhw",
+         "name": "Compressor hours hot water"
+        },
+        {
+         "entity": "sensor.bridge0_meters_hours_circulation_pump",
+         "name": "Circulation pump hours"
+        },
+        {
+         "entity": "sensor.bridge0_meters_electricity_consumed_backup_dhw",
+         "name": "Backup heater hot water (kWh)"
+        },
+        {
+         "entity": "sensor.bridge0_meters_hours_booster",
+         "name": "Booster heater hours"
+        },
+        {
+         "entity": "sensor.ashp_annual_power_consumption_total",
+         "name": "Electricity this year"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
