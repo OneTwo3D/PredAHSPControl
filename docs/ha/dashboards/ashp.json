@@ -72,11 +72,11 @@
        "name": "Heat output",
        "unit": "W",
        "min": 0,
-       "max": 4000,
+       "max": 8000,
        "severity": {
         "green": 0,
-        "yellow": 3000,
-        "red": 3800
+        "yellow": 5000,
+        "red": 7000
        }
       },
       {
