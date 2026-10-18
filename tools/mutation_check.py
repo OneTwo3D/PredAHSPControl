@@ -566,6 +566,20 @@ M = [
         "if n_raw < 0:",
         CORE,
     ),
+    (
+        "L-1 required LWT ignores measured gains",
+        C + "core/engine.py",
+        "ua_w_per_k * (ti - to) - base_gains_w - measured_gains_w)",
+        "ua_w_per_k * (ti - to) - base_gains_w)",
+        CORE,
+    ),
+    (
+        "L-2 incomplete gains still taken off",
+        C + "core/engine.py",
+        "gains_used = self.gains_now.total_w if complete else 0.0",
+        "gains_used = self.gains_now.total_w",
+        CORE,
+    ),
 ]
 only = sys.argv[1:]
 res = []

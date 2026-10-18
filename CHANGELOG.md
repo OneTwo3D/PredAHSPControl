@@ -5,6 +5,19 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.2] - 2026-10-18
+
+### Fixed
+- **Required flow temperature was 3–4 K too high.** It subtracted only the learned base gains (70 W) from
+  the heat loss and ignored the measured gains (inverter losses, sun, hot-water tank: 190–550 W on the
+  first heating day), so it showed 28–30 °C while the heat pump held the room at 25–27 °C leaving water.
+  The measured gains are now taken off, as in the forecast; while a configured gain source is unavailable
+  none are (a warmer flow, never a cold house).
+
+### Added
+- *Required flow temperature* attributes `heat_needed_w`, `base_gains_w`, `measured_gains_w` and
+  `ua_w_per_k`, to compare the model's heat demand with the heat pump's own heat output.
+
 ## [0.6.1] - 2026-10-11
 
 ### Fixed

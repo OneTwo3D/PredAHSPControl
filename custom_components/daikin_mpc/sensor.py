@@ -264,7 +264,15 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=lambda s: round(s.lwt_required_c, 1) if s.lwt_required_c is not None else None,
-        attrs_fn=lambda s: {"note": "steady-state LWT to hold the current room temperature; floor 25 °C"},
+        attrs_fn=lambda s: {
+            "note": "steady-state LWT to hold the current room temperature; floor 25 °C",
+            # inputs, to compare with the heat pump's own heat output: heat_needed_w = UA × (room − outside)
+            # − base gains − measured gains
+            "heat_needed_w": None if s.lwt_required_heat_w is None else round(s.lwt_required_heat_w),
+            "base_gains_w": round(s.gains),
+            "measured_gains_w": None if s.lwt_required_gains_w is None else round(s.lwt_required_gains_w),
+            "ua_w_per_k": round(s.ua, 1),
+        },
     ),
     *(
         MpcSensorDescription(

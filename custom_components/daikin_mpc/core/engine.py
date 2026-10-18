@@ -126,6 +126,29 @@ class EngineStatus:
     capacity_nights: int = 0
     capacity_pairs: float = 0.0
     tau_h: float | None = None
+    # inputs of lwt_required_c: heat the emitters must deliver, and the measured gains taken off
+    lwt_required_heat_w: float | None = None
+    lwt_required_gains_w: float | None = None
+
+
+def required_lwt(
+    plant: PlantParams,
+    ua_w_per_k: float,
+    base_gains_w: float,
+    measured_gains_w: float,
+    ti: float,
+    to: float,
+    min_lwt_c: float,
+) -> tuple[float, float]:
+    """Steady-state leaving water temperature that holds ``ti`` at outdoor ``to``, and the heat it delivers.
+
+    The emitters only have to cover the loss that the gains do not: base (learned) gains plus the gains
+    measured right now (inverter, sun, tank, household share). Without the measured part the result
+    overstates the flow temperature by the gains' share (2026-10-18: 28–30 °C vs 25–27 °C real).
+    """
+    q_need = max(0.0, ua_w_per_k * (ti - to) - base_gains_w - measured_gains_w)
+    lwt = max(plant.radiator.required_mwt_c(q_need, ti) + plant.flow_return_dt_k / 2, min_lwt_c)
+    return lwt, q_need
 
 
 @dataclass
@@ -314,13 +337,14 @@ class ShadowEngine:
                     if math.isfinite(val):
                         self._record_external(name, t, h_h, val)
 
-        lwt_req = None
+        lwt_req = q_need = None
+        # measured gains only while every configured source is available (as in the forecast); with an
+        # incomplete set none are taken off, which errs towards a warmer flow, never a cold house
+        gains_used = self.gains_now.total_w if complete else 0.0
         if ti is not None and to is not None:
             bp = self.learner.params
-            q_need = max(0.0, bp.ua_w_per_k * (ti - to) - bp.gains_w)
-            lwt_req = max(
-                self.plant.radiator.required_mwt_c(q_need, ti) + self.plant.flow_return_dt_k / 2,
-                self.cfg.min_lwt_c,
+            lwt_req, q_need = required_lwt(
+                self.plant, bp.ua_w_per_k, bp.gains_w, gains_used, ti, to, self.cfg.min_lwt_c
             )
 
         sd = self.learner.sd
@@ -342,6 +366,8 @@ class ShadowEngine:
             errors={k: {"n": v.n, "mae": v.mae, "bias": v.bias} for k, v in sorted(self.errors.items())},
             cop_now=self.cop(to) if to is not None else None,
             lwt_required_c=lwt_req,
+            lwt_required_heat_w=q_need,
+            lwt_required_gains_w=gains_used if lwt_req is not None else None,
             last_day=self.last_day.to_dict() if self.last_day else None,
             heating_enabled=bool(heating_enabled) if heating_enabled is not None else None,
             standby_w=self.standby_w,

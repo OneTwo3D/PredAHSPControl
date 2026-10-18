@@ -279,4 +279,11 @@ async def test_heat_gains_from_mapped_sources(hass: HomeAssistant, weather_calls
     ua = hass.states.get("sensor.daikin_mpc_heat_loss_coefficient")
     base = hass.states.get("sensor.daikin_mpc_base_internal_gains")
     assert float(ua.state) == pytest.approx(90.0) and float(base.state) == pytest.approx(70.0)
+    # required flow temperature: measured gains are taken off the heat needed, and its inputs are shown
+    lwt = hass.states.get("sensor.daikin_mpc_required_flow_temperature")
+    a = lwt.attributes
+    assert a["measured_gains_w"] == pytest.approx(float(g.state), abs=1)
+    assert a["base_gains_w"] == 70 and a["ua_w_per_k"] == pytest.approx(90.0)
+    ti, to = 20.4, float(hass.states.get(SUGGESTED["to"]).state)
+    assert a["heat_needed_w"] == pytest.approx(max(0.0, 90.0 * (ti - to) - 70 - float(g.state)), abs=2)
     assert await hass.config_entries.async_unload(entry.entry_id)

@@ -553,3 +553,43 @@ def test_day_coverage_counts_hours_without_a_gains_record_as_uncovered():
     assert len(recs) == 1
     assert recs[0].gains_coverage == pytest.approx(0.5, abs=0.05)
     assert recs[0].extra_gains_w == pytest.approx(100.0)
+
+
+# --- required flow temperature (0.6.2) ---------------------------------------------------------------
+from custom_components.daikin_mpc.core.engine import required_lwt
+
+
+def test_required_lwt_takes_measured_gains_off_the_heat_needed():
+    plant = ShadowEngine(EngineConfig()).plant
+    lwt0, q0 = required_lwt(plant, 90.0, 70.0, 0.0, 21.3, 10.5, 25.0)
+    lwt1, q1 = required_lwt(plant, 90.0, 70.0, 190.0, 21.3, 10.5, 25.0)
+    assert q0 == pytest.approx(90.0 * 10.8 - 70.0)
+    assert q1 == pytest.approx(q0 - 190.0)
+    assert lwt1 < lwt0
+    expected = max(plant.radiator.required_mwt_c(q1, 21.3) + plant.flow_return_dt_k / 2, 25.0)
+    assert lwt1 == pytest.approx(expected)
+
+
+def test_required_lwt_floor_when_gains_cover_the_loss():
+    lwt, q = required_lwt(ShadowEngine(EngineConfig()).plant, 90.0, 70.0, 2000.0, 21.0, 15.0, 25.0)
+    assert q == 0.0 and lwt == 25.0
+
+
+def test_engine_required_lwt_uses_gains_only_while_complete():
+    eng = ShadowEngine(EngineConfig())
+    for m in range(0, 15, 5):
+        st = eng.process(full(T0 + timedelta(minutes=m), inverter_loss_w=400.0), None)
+    assert st.lwt_required_gains_w == pytest.approx(st.gains_now.total_w) and st.gains_now.total_w >= 400.0
+    bp = eng.learner.params
+    need = bp.ua_w_per_k * 15.5 - bp.gains_w - st.gains_now.total_w
+    assert st.lwt_required_heat_w == pytest.approx(max(0.0, need))
+    # configured source unavailable: nothing is taken off (warmer flow, never a cold house)
+    # (the tank still reports, so the partial total is non-zero and must not be used either)
+    st2 = eng.process(full(T0 + timedelta(minutes=20), inverter_loss_w=None, tank_c=50.0), None)
+    assert st2.gains_complete is False and st2.gains_now.total_w > 0
+    assert st2.lwt_required_gains_w == 0.0
+    assert st2.lwt_required_heat_w == pytest.approx(max(0.0, bp.ua_w_per_k * 15.5 - bp.gains_w))
+    assert st2.lwt_required_c >= st.lwt_required_c
+    # no gain sources configured: as before (base gains only)
+    st3 = ShadowEngine(EngineConfig()).process(full(T0), None)
+    assert st3.lwt_required_gains_w == 0.0

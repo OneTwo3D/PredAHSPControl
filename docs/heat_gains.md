@@ -56,6 +56,12 @@ in one constant, as before). Saved options win: existing installations set *Heat
   slope, so their night-time variation (e.g. battery use) does not bias the thermal capacity.
 - House load and inverter losses older than 2 h are stale (their meters report every few seconds).
 
+## Required flow temperature
+
+The *Required flow temperature* sensor (steady state that holds the current room temperature) uses
+`UA × (room − outside) − base gains − measured gains`; its attributes show each term. Measured gains are
+only subtracted while every configured source is available.
+
 ## Forecast
 
 - Inverter losses and household electricity: measured value for the first hour, then learned hour-of-day
