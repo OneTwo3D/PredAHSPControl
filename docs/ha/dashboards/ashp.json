@@ -37,6 +37,10 @@
        "name": "Electrical power"
       },
       {
+       "entity": "sensor.bridge0_power_production_heatpump",
+       "name": "Heat output"
+      },
+      {
        "entity": "sensor.bridge0_sensors_flow",
        "name": "Water flow"
       },
@@ -60,6 +64,19 @@
         "green": 0,
         "yellow": 1000,
         "red": 2500
+       }
+      },
+      {
+       "type": "gauge",
+       "entity": "sensor.bridge0_power_production_heatpump",
+       "name": "Heat output",
+       "unit": "W",
+       "min": 0,
+       "max": 8000,
+       "severity": {
+        "green": 0,
+        "yellow": 5000,
+        "red": 7000
        }
       },
       {
@@ -94,6 +111,42 @@
          "yellow": 2.5,
          "red": 0
         }
+       }
+      }
+     ]
+    },
+    {
+     "type": "custom:apexcharts-card",
+     "graph_span": "24h",
+     "header": {
+      "show": true,
+      "title": "Electricity in vs heat out (24 h)",
+      "show_states": true,
+      "colorize_states": true
+     },
+     "yaxis": [
+      {
+       "min": 0,
+       "decimals": 0
+      }
+     ],
+     "series": [
+      {
+       "entity": "sensor.bridge0_power_production_heatpump",
+       "name": "Heat output",
+       "type": "area",
+       "opacity": 0.3,
+       "group_by": {
+        "func": "avg",
+        "duration": "5min"
+       }
+      },
+      {
+       "entity": "sensor.kwh_meter_power",
+       "name": "Electricity",
+       "group_by": {
+        "func": "avg",
+        "duration": "5min"
        }
       }
      ]
