@@ -148,3 +148,7 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   instead of stale values) and `sensor.ashp_compressor_starts_today`. ASHP dashboard rebuilt
   (`docs/ha/dashboards/ashp.json`). Predbat `load_ml_enable: false` until ~11 Nov (ML only sees history
   since the standby sensor joined `load_today` on 14 Oct).
+* 23 Oct 2026: Predbat apps.yaml (via Predbat's editor, backup apps.yaml.backup): battery_voltage fixed at
+  50.0 (was sensor.solis_battery_voltage; voltage jitter caused ~70 current rewrites per 3 days) and
+  inverter_limit_charge/discharge 4950 W -> 99.0 A written to the Solis (max 100 A). Predbat plans 4.95 kW;
+  actual charge ~5.18 kW at 52.3 V (+4.6 %, self-correcting via re-planning). Kept as is.
