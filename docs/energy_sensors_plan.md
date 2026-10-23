@@ -155,3 +155,6 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
 * 23 Oct 2026: Solis losses fitted over 10 days (5-min): 125 W + 11.8 % of charge + 4.9 % of discharge + 3.1 % of
   PV. Predbat set to inverter_loss 0.04, battery_loss 0.075 (grid charge 11.5 %), battery_loss_discharge 0.01
   (discharge 5 %); was 0.03 / 0.015 / 0.015 (grid charge only 4.5 %).
+* 23 Oct 2026 (correction): independent check from 19 charge start/stop steps (smart meter vs battery DC):
+  battery DC / grid = 0.926 -> ~7.4 % proportional grid-charge loss; the Solis AC reading is ~2.4 % high at
+  5.5 kW, which inflated the 11.8 %. battery_loss set to 0.035 (grid charge 7.5 % with inverter_loss 0.04).
