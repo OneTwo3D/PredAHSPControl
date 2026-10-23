@@ -152,3 +152,6 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   50.0 (was sensor.solis_battery_voltage; voltage jitter caused ~70 current rewrites per 3 days) and
   inverter_limit_charge/discharge 4950 W -> 99.0 A written to the Solis (max 100 A). Predbat plans 4.95 kW;
   actual charge ~5.18 kW at 52.3 V (+4.6 %, self-correcting via re-planning). Kept as is.
+* 23 Oct 2026: Solis losses fitted over 10 days (5-min): 125 W + 11.8 % of charge + 4.9 % of discharge + 3.1 % of
+  PV. Predbat set to inverter_loss 0.04, battery_loss 0.075 (grid charge 11.5 %), battery_loss_discharge 0.01
+  (discharge 5 %); was 0.03 / 0.015 / 0.015 (grid charge only 4.5 %).
