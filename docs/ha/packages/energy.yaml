@@ -35,6 +35,19 @@ template:
           {{ is_number(states('sensor.solis_pv_total_power'))
              and is_number(states('sensor.kwh_meter_power_2')) }}
 
+      - name: "Solis AC power corrected"
+        unique_id: energy_solis_ac_power_corrected
+        default_entity_id: sensor.solis_ac_power_corrected
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        # Solis AC output (+ to house / - charging) corrected to the smart meter. The inverter's own reading
+        # is ~50 W too negative at idle (off-test 14 Oct 2026: -90..-100 W reported, ~45 W real) and ~2.4 %
+        # high at 5.5 kW (19 charge start/stop steps vs the smart meter, 23 Oct 2026):
+        #   reported = 1.024 x real - 50 W  ->  real = (reported + 50) / 1.024
+        state: "{{ ((states('sensor.solis_active_power') | float(0) + 50) / 1.024) | round(0) }}"
+        availability: "{{ is_number(states('sensor.solis_active_power')) }}"
+
       - name: "House power"
         unique_id: energy_house_power_new
         default_entity_id: sensor.house_power
@@ -45,13 +58,13 @@ template:
         # Excludes the Solis conversion/standby losses (see solis_loss_power).
         state: >
           {% set grid = states('sensor.solis_power') | float(0) %}
-          {% set solis = states('sensor.solis_active_power') | float(0) %}
+          {% set solis = states('sensor.solis_ac_power_corrected') | float(0) %}
           {% set roof = -(states('sensor.kwh_meter_power_2') | float(0)) %}
           {% set shed = states('sensor.shed_power_ac') | float(0) %}
           {{ [grid + solis + roof + shed, 0] | max | round(0) }}
         availability: >
           {{ has_value('sensor.solis_power')
-             and is_number(states('sensor.solis_active_power'))
+             and is_number(states('sensor.solis_ac_power_corrected'))
              and is_number(states('sensor.kwh_meter_power_2')) }}
 
       - name: "Solis loss power"
@@ -64,11 +77,11 @@ template:
         state: >
           {{ [states('sensor.solis_pv_total_power') | float(0)
               + states('sensor.battery_power') | float(0)
-              - states('sensor.solis_active_power') | float(0), 0] | max | round(0) }}
+              - states('sensor.solis_ac_power_corrected') | float(0), 0] | max | round(0) }}
         availability: >
           {{ is_number(states('sensor.solis_pv_total_power'))
              and is_number(states('sensor.battery_power'))
-             and is_number(states('sensor.solis_active_power')) }}
+             and is_number(states('sensor.solis_ac_power_corrected')) }}
 
       - name: "Solis standby power"
         unique_id: energy_solis_standby_power
@@ -76,18 +89,17 @@ template:
         unit_of_measurement: W
         device_class: power
         state_class: measurement
-        # Fixed part of the Solis losses (fans, control, idle conversion stage; measured 115-130 W).
-        # The proportional part (~5 % of PV + battery throughput) is modelled by Predbat's loss settings,
-        # so it is removed here; capped at 150 W so charging losses are never counted twice.
-        # Predbat adds this to the house load (load_today / load_power_1).
-        # Off-test 14 Oct 2026: true idle standby ~80 W (35 W battery + 45 W grid); the Solis AC reading
-        # over-states its idle grid draw by ~50 W, so this reads ~50 W high and house_power ~50 W low.
-        # The sum house_power + this sensor is still right (grid + PV + battery), which is what Predbat uses.
+        # Fixed part of the Solis losses (fans, control, idle conversion stage): ~65-80 W idle with the
+        # corrected AC reading (off-test 14 Oct 2026: ~80 W). The proportional part is what Predbat's loss
+        # settings model (grid charge 7.5 %, discharge 5 %, PV 4 %: battery_loss 0.035 /
+        # battery_loss_discharge 0.01 / inverter_loss 0.04), so it is removed here; capped at 150 W so
+        # charging losses are never counted twice. Predbat adds this to the house load (load_today/load_power).
         state: >
           {% set loss = states('sensor.solis_loss_power') | float(0) %}
-          {% set thr = (states('sensor.battery_power') | float(0)) | abs
-                       + states('sensor.solis_pv_total_power') | float(0) %}
-          {{ [[loss - 0.05 * thr, 0] | max, 150] | min | round(0) }}
+          {% set bat = states('sensor.battery_power') | float(0) %}
+          {% set prop = 0.075 * ([-bat, 0] | max) + 0.05 * ([bat, 0] | max)
+                        + 0.04 * states('sensor.solis_pv_total_power') | float(0) %}
+          {{ [[loss - prop, 0] | max, 150] | min | round(0) }}
         availability: >
           {{ has_value('sensor.solis_loss_power')
              and is_number(states('sensor.battery_power'))

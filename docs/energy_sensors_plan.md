@@ -158,3 +158,7 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
 * 23 Oct 2026 (correction): independent check from 19 charge start/stop steps (smart meter vs battery DC):
   battery DC / grid = 0.926 -> ~7.4 % proportional grid-charge loss; the Solis AC reading is ~2.4 % high at
   5.5 kW, which inflated the 11.8 %. battery_loss set to 0.035 (grid charge 7.5 % with inverter_loss 0.04).
+* 23 Oct 2026: new `sensor.solis_ac_power_corrected` = (solis_active_power + 50) / 1.024 (idle offset from the
+  off-test, 2.4 % scale from the smart-meter steps); house_power and solis_loss_power use it. Standby now
+  removes Predbat's modelled proportional losses (7.5 % charge, 5 % discharge, 4 % PV): ~60 W idle,
+  ~2.1 kWh/day (was ~110 W, ~2.9 kWh/day). house_power + solis_loss_power is unchanged (grid + PV + battery).
