@@ -162,3 +162,6 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   off-test, 2.4 % scale from the smart-meter steps); house_power and solis_loss_power use it. Standby now
   removes Predbat's modelled proportional losses (7.5 % charge, 5 % discharge, 4 % PV): ~60 W idle,
   ~2.1 kWh/day (was ~110 W, ~2.9 kWh/day). house_power + solis_loss_power is unchanged (grid + PV + battery).
+* 24 Oct 2026: Predbat weather alerts added to apps.yaml (Meteoalarm UK feed; amber/red wind, snow, ice,
+  thunderstorm, rain; severity Severe/Extreme; certainty Likely/Expected; keep 50 %). Sensor
+  sensor.predbat_alertfeed_status lists active/upcoming matching warnings.
