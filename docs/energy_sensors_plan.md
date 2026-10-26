@@ -165,3 +165,7 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
 * 24 Oct 2026: Predbat weather alerts added to apps.yaml (Meteoalarm UK feed; amber/red wind, snow, ice,
   thunderstorm, rain; severity Severe/Extreme; certainty Likely/Expected; keep 50 %). Sensor
   sensor.predbat_alertfeed_status lists active/upcoming matching warnings.
+* 24-25 Oct 2026: unmetered 1.93 kW load for exactly 24 h (24 Oct 11:49 BST - 25 Oct 10:49 GMT, ~45 kWh) =
+  a heater in the loft (outside the heated envelope), since unplugged. No correction to Predbat/MPC (user's
+  choice); next two weekends' Predbat load forecast is inflated by it. New automation
+  automation.alert_large_untracked_load: phone alert when house load minus all metered loads > 1.5 kW for 30 min.
