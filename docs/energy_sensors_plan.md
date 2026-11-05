@@ -169,3 +169,7 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   a heater in the loft (outside the heated envelope), since unplugged. No correction to Predbat/MPC (user's
   choice); next two weekends' Predbat load forecast is inflated by it. New automation
   automation.alert_large_untracked_load: phone alert when house load minus all metered loads > 1.5 kW for 30 min.
+* 5 Nov 2026: Daikin MPC input dhw_elec_kwh remapped (reconfigure, learned state kept) from Daikin's
+  compressor-DHW counter (whole kWh, ~1.0/day) to the metered split sensor.heat_pump_dhw_energy_total.
+  19 Oct-5 Nov: COP on the MPC basis 3.76 vs metered heating split 3.42; ~3 % of the gap from the DHW counter
+  steps, ~7 % by design (standby removed from the COP, added separately in forecasts).
