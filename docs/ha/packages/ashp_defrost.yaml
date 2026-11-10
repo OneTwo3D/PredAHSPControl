@@ -1,0 +1,116 @@
+# ASHP defrost statistics (template sensors only, so `template.reload` applies them without a restart).
+#
+# Source: binary_sensor.bridge0_mode_defrost_active (ESPAltherma/bridge0). It had never been "on" when
+# this was added (10 Nov 2026; coldest outside temperature with the compressor running was 3.5 °C), so
+# the first real defrost is also the first check that the flag works. The totals start at 0 (seeded on
+# HA start and on template reload).
+#
+# Running totals (state_class total_increasing). The dashboard derives today / 7-day / per-day values
+# from their long-term statistics, so no utility meters (which would need a restart) are needed.
+#  - count and minutes: counted at each defrost start / end;
+#  - electricity: the heat-pump meter (sensor.kwh_meter_power) integrated every 10 s while defrosting;
+#  - heat drawn: heat taken back out of the heating water while defrosting, flow x (return - flow
+#    temperature) x 4186 J/(kg K), integrated every 10 s.
+# Not counted: the extra compressor energy afterwards to bring the water back up (recovery). The daily
+# COP sensors include it, because they use the meters.
+template:
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.bridge0_mode_defrost_active
+        from: "off"
+        to: "on"
+        id: start
+      - trigger: state
+        entity_id: binary_sensor.bridge0_mode_defrost_active
+        from: "on"
+        id: end
+      - trigger: homeassistant
+        event: start
+        id: init
+      - trigger: event
+        event_type: event_template_reloaded
+        id: init
+    sensor:
+      - name: "ASHP defrost count"
+        unique_id: ashp_defrost_count_total
+        icon: mdi:snowflake-melt
+        unit_of_measurement: "defrosts"
+        state_class: total_increasing
+        state: >
+          {{ (this.state | int(0)) + (1 if trigger.id == 'start' else 0) }}
+
+      - name: "ASHP defrost time"
+        unique_id: ashp_defrost_minutes_total
+        icon: mdi:timer-snowflake
+        unit_of_measurement: "min"
+        state_class: total_increasing
+        state: >
+          {% set total = this.state | float(0) %}
+          {% if trigger.id == 'end' %}
+            {% set mins = (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) / 60 %}
+            {{ (total + ([mins, 0] | max)) | round(2) }}
+          {% else %}{{ total }}{% endif %}
+
+      - name: "ASHP last defrost"
+        unique_id: ashp_last_defrost
+        icon: mdi:snowflake-alert
+        device_class: timestamp
+        state: >
+          {{ now().isoformat() if trigger.id == 'start'
+             else (this.state if this.state not in ['unknown', 'unavailable', ''] else none) }}
+        attributes:
+          outside_c: >
+            {{ states('sensor.bridge0_sensors_temperature_outside') | float(none)
+               if trigger.id == 'start' else this.attributes.get('outside_c') }}
+          flow_c_at_start: >
+            {{ states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(none)
+               if trigger.id == 'start' else this.attributes.get('flow_c_at_start') }}
+
+      - name: "ASHP last defrost duration"
+        unique_id: ashp_last_defrost_duration
+        icon: mdi:timer-outline
+        unit_of_measurement: "min"
+        state: >
+          {% if trigger.id == 'end' %}
+            {{ ((as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) / 60) | round(1) }}
+          {% else %}{{ this.state | float(none) }}{% endif %}
+
+  - triggers:
+      - trigger: time_pattern
+        seconds: "/10"
+        id: tick
+      - trigger: homeassistant
+        event: start
+        id: init
+      - trigger: event
+        event_type: event_template_reloaded
+        id: init
+    conditions:
+      - condition: template
+        value_template: >
+          {{ trigger.id == 'init' or is_state('binary_sensor.bridge0_mode_defrost_active', 'on') }}
+    sensor:
+      - name: "ASHP defrost electricity"
+        unique_id: ashp_defrost_electricity_total
+        icon: mdi:flash-alert
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total_increasing
+        state: >
+          {% set p = states('sensor.kwh_meter_power') | float(0) %}
+          {% set add = ([p, 0] | max) * 10 / 3600000 if trigger.id == 'tick' else 0 %}
+          {{ ((this.state | float(0)) + add) | round(4) }}
+
+      - name: "ASHP defrost heat drawn"
+        unique_id: ashp_defrost_heat_drawn_total
+        icon: mdi:water-thermometer-outline
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total_increasing
+        state: >
+          {% set flow = states('sensor.bridge0_sensors_flow') | float(0) %}
+          {% set lwt = states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(none) %}
+          {% set rwt = states('sensor.bridge0_sensors_temperature_r4t_return_water') | float(none) %}
+          {% set w = (flow * (rwt - lwt) * 4186 / 60) if lwt is not none and rwt is not none else 0 %}
+          {% set add = ([w, 0] | max) * 10 / 3600000 if trigger.id == 'tick' else 0 %}
+          {{ ((this.state | float(0)) + add) | round(4) }}

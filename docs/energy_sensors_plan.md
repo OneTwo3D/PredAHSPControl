@@ -173,3 +173,17 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   compressor-DHW counter (whole kWh, ~1.0/day) to the metered split sensor.heat_pump_dhw_energy_total.
   19 Oct-5 Nov: COP on the MPC basis 3.76 vs metered heating split 3.42; ~3 % of the gap from the DHW counter
   steps, ~7 % by design (standby removed from the COP, added separately in forecasts).
+* 9 Nov 2026: Ecowitt outdoor array was in the loft 3 Nov ~13:50 UTC - 9 Nov ~11:20 UTC (solar radiation 0,
+  temperature ~4-5 K too warm). MPC unaffected except the sun term: its outside temperature is the Daikin
+  sensor, solar_ratio froze at 0.1798 (learns only when sun > 20 W/m²), and 3-7 Nov never reached the daily
+  learner (gains-basis change of 5 Nov and HA restart 8 Nov 00:42 broke the day pairs). Only 8 Nov (and the
+  morning of 9 Nov) will be learned without sun, ≈ -1.3 W/K on UA. No reset. Predheat uses the Ecowitt
+  temperature (7-day lookback) until ~16 Nov.
+* 10 Nov 2026: defrost statistics, new package `packages/ashp_defrost.yaml` (template sensors only; totals for
+  count, minutes, electricity while defrosting, heat drawn back from the heating water; last defrost time,
+  outside temperature, duration). ASHP dashboard: "Defrosting" banner while
+  binary_sensor.bridge0_mode_defrost_active is on, and a Defrost card (today / 7 d / per day from long-term
+  statistics). binary_sensor.bridge0_mode_defrost_active had not been on once since 10 Oct (coldest outside
+  temperature with the compressor running 3.5 °C; no reverse-cycle signature in compressor/fan/water data
+  either), so it is still unverified. Note: `template.reload` blanks the trigger-based COP sensors until
+  their next meter step.
