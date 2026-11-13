@@ -187,3 +187,11 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   temperature with the compressor running 3.5 °C; no reverse-cycle signature in compressor/fan/water data
   either), so it is still unverified. Note: `template.reload` blanks the trigger-based COP sensors until
   their next meter step.
+* 12-13 Nov 2026: Predbat ML load forecaster enabled 12 Nov 10:38, disabled again 13 Nov 00:18: it forecast
+  94 kWh for 12 Nov (~4 kWh per 5 min on Thursday evening, the 50 kW training clip). Cause: the ML database
+  (default `load_ml_database_days` 90) still held the pre-10 Oct `total_house_consumption` helper - 97 midnight
+  jumps > 3 kWh/h and 8 daytime jumps (6 of them Wed/Thu 16-22 h, up to +19 kWh/h on Thu 10 Sep). The
+  per-weekday cap (5 x max step) was then 5.6/9.2 kWh for Wed/Thu; validation (last 48 h) looked clean. Fix
+  13 Nov: `load_ml_database_days: 28` in apps.yaml (only data since 15 Oct) and predbat_ml_model.npz +
+  predbat_ml_history.npz deleted (HA VM /mnt/data/supervisor/app_configs/6adb4f0d_predbat/) so it starts
+  fresh. `load_ml_enable` still false.
