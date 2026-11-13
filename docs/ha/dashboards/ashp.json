@@ -329,111 +329,42 @@
        ]
       },
       {
-       "type": "horizontal-stack",
-       "cards": [
-        {
-         "type": "statistic",
-         "entity": "sensor.ashp_defrost_count",
-         "name": "Defrosts 7 d",
-         "stat_type": "change",
-         "period": {
-          "rolling_window": {
-           "duration": {
-            "days": 7
-           }
-          }
-         }
-        },
-        {
-         "type": "statistic",
-         "entity": "sensor.ashp_defrost_time",
-         "name": "Minutes 7 d",
-         "stat_type": "change",
-         "period": {
-          "rolling_window": {
-           "duration": {
-            "days": 7
-           }
-          }
-         }
-        },
-        {
-         "type": "statistic",
-         "entity": "sensor.ashp_defrost_electricity",
-         "name": "kWh 7 d",
-         "stat_type": "change",
-         "period": {
-          "rolling_window": {
-           "duration": {
-            "days": 7
-           }
-          }
-         }
-        }
-       ]
-      },
-      {
        "type": "entities",
-       "title": "Defrost",
-       "state_color": true,
+       "title": "Last defrost",
        "entities": [
         {
-         "entity": "binary_sensor.bridge0_mode_defrost_active",
-         "name": "Defrosting now"
-        },
-        {
          "entity": "sensor.ashp_last_defrost",
-         "name": "Last defrost",
+         "name": "When",
          "format": "relative"
         },
         {
          "type": "attribute",
          "entity": "sensor.ashp_last_defrost",
          "attribute": "outside_c",
-         "name": "Outside at last defrost",
+         "name": "Outside",
          "suffix": "\u00b0C"
         },
         {
          "entity": "sensor.ashp_last_defrost_duration",
-         "name": "Last defrost duration"
-        },
-        {
-         "entity": "sensor.ashp_defrost_heat_drawn",
-         "name": "Heat drawn from water (total)"
-        },
-        {
-         "entity": "sensor.ashp_defrost_electricity",
-         "name": "Electricity while defrosting (total)"
+         "name": "Duration"
         }
        ]
       },
       {
        "type": "statistics-graph",
-       "title": "Defrosts per day (30 d)",
+       "title": "Defrost per day (30 d)",
        "entities": [
         {
          "entity": "sensor.ashp_defrost_count",
          "name": "Defrosts"
-        }
-       ],
-       "stat_types": [
-        "change"
-       ],
-       "period": "day",
-       "days_to_show": 30,
-       "chart_type": "bar"
-      },
-      {
-       "type": "statistics-graph",
-       "title": "Defrost energy per day (30 d)",
-       "entities": [
+        },
         {
          "entity": "sensor.ashp_defrost_electricity",
-         "name": "Electricity"
+         "name": "Electricity kWh"
         },
         {
          "entity": "sensor.ashp_defrost_heat_drawn",
-         "name": "Heat drawn from water"
+         "name": "Heat drawn kWh"
         }
        ],
        "stat_types": [
