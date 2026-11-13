@@ -197,7 +197,7 @@
        "stroke_dash": 2
       },
       {
-       "entity": "sensor.bridge0_sensors_temperature_r4t_return_water",
+       "entity": "sensor.ashp_return_temperature",
        "name": "Return water"
       },
       {

@@ -201,3 +201,9 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   when idle, ~1/3 low when running). New `packages/ashp_heat_output.yaml`: sensor.ashp_heat_output (corrected),
   now used on the ASHP dashboard (row, gauge, chart); ashp_defrost heat-drawn uses the same correction.
   MPC learning is unaffected (uses the counters; R4T/heat_w only kept as unused hourly means).
+* 13 Nov 2026: consumers of the uncorrected heat data checked. COP sensors (12 utility meters on Daikin's
+  compressor heating/DHW/total counters), MPC, Predbat/Predheat, automations and the other HA dashboards do not
+  use it. Added sensor.ashp_return_temperature (R4T - 0.61 K) to `packages/ashp_heat_output.yaml`; ASHP
+  dashboard flow-temperature chart uses it. Tablet dashboard (ha-energy-dashboard ac365f0, deployed
+  ac365f0-20261113133738): heat output / COP now / flow-diagram heat use sensor.ashp_heat_output, Return uses
+  sensor.ashp_return_temperature.

@@ -30,3 +30,16 @@ template:
         attributes:
           return_offset_k: 0.61
           note: "flow x (R1T - R4T + 0.61 K); R4T reads ~0.61 K high"
+
+      - name: "ASHP return temperature"
+        unique_id: ashp_return_temperature_corrected
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:thermometer-water
+        availability: "{{ has_value('sensor.bridge0_sensors_temperature_r4t_return_water') }}"
+        state: >
+          {{ (states('sensor.bridge0_sensors_temperature_r4t_return_water') | float(0) - 0.61) | round(2) }}
+        attributes:
+          return_offset_k: 0.61
+          note: "R4T - 0.61 K (R4T reads ~0.61 K above R1T/R10T)"
