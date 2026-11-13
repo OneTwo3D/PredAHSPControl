@@ -116,8 +116,8 @@
        ],
        "card": {
         "type": "gauge",
-        "entity": "sensor.bridge0_cop_cop_realtime",
-        "name": "COP now",
+        "entity": "sensor.ashp_cop_now",
+        "name": "COP (5 min)",
         "min": 0,
         "max": 7,
         "severity": {

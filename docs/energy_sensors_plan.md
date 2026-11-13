@@ -225,3 +225,13 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   - New sensor.ashp_total_heat_measured_daily (heating + DHW, +11 kWh on 13 Nov only): HA ASHP page 'Heat made'
     and tablet 'COP today' (ha-energy-dashboard c615265).
   - Daikin's counters stay available for the cross-check (first one due 20 Nov).
+* 13 Nov 2026: 'COP now' gauge on the ASHP page was bridge0_cop_cop_realtime = uncorrected bridge heat / Daikin's
+  own power estimate (read < 1 during a DHW run). Replaced by sensor.ashp_cop_now (`packages/ashp_heat_output.yaml`):
+  5-min time-weighted means (UI "statistics" helpers, average_step, max_age 5 min, keep_last_sample):
+  sensor.ashp_heat_output_5_min (<- ashp_heat_output) / sensor.ashp_electrical_power_5_min (<- kwh_meter_power),
+  only while the compressor runs; gauge renamed "COP (5 min)".
+  DHW runs 20 Oct-13 Nov (daily 13:52, 17-36 min, tank ~42 -> 45 C): run COP 2.1-2.8, all finished runs 2.08
+  (corrected heat / meter), COP > 2 within 0-2 min. Exceptions: 3 Nov (1.75, 14 min to COP > 2) and 13 Nov
+  (1.32 after 22 min, tank not warming, 18 min to COP > 2). Not explained by space heating running just before
+  (13 other runs started straight after it and were fine), flow (~15.5 L/min as usual) or defrost (fan never
+  stopped). Valve rests in DHW position 23:02-07:02 without the compressor (standby only). Cause open.

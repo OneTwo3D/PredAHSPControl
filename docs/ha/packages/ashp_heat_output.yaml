@@ -71,6 +71,20 @@ template:
           {{ (states('sensor.ashp_heating_heat_measured_daily') | float(0)
               + states('sensor.ashp_dhw_heat_measured_daily') | float(0) + carry) | round(2) }}
 
+      # Live COP for the ASHP page gauge: 5-min time-weighted means (UI "statistics" helpers, average_step,
+      # max_age 5 min) of the corrected heat and the HomeWizard meter. Replaces bridge0_cop_cop_realtime, which
+      # divides the uncorrected heat by Daikin's own power estimate. Only while the compressor runs.
+      - name: "ASHP COP now"
+        unique_id: ashp_cop_now
+        state_class: measurement
+        icon: mdi:gauge
+        availability: >
+          {{ has_value('sensor.ashp_heat_output_5_min') and has_value('sensor.ashp_electrical_power_5_min') }}
+        state: >
+          {% set heat = states('sensor.ashp_heat_output_5_min') | float(0) %}
+          {% set elec = states('sensor.ashp_electrical_power_5_min') | float(0) %}
+          {{ (heat / elec) | round(2) if is_state('binary_sensor.bridge0_mode_compressor', 'on') and elec > 300 else none }}
+
       - name: "ASHP return temperature"
         unique_id: ashp_return_temperature_corrected
         unit_of_measurement: "°C"
