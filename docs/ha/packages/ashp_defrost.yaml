@@ -9,8 +9,8 @@
 # from their long-term statistics, so no utility meters (which would need a restart) are needed.
 #  - count and minutes: counted at each defrost start / end;
 #  - electricity: the heat-pump meter (sensor.kwh_meter_power) integrated every 10 s while defrosting;
-#  - heat drawn: heat taken back out of the heating water while defrosting, flow x (return - flow
-#    temperature) x 4186 J/(kg K), integrated every 10 s.
+#  - heat drawn: heat taken back out of the heating water while defrosting, flow x (return - 0.61 K - flow
+#    temperature) x 4186 J/(kg K), integrated every 10 s (R4T reads ~0.61 K high, see ashp_heat_output.yaml).
 # Not counted: the extra compressor energy afterwards to bring the water back up (recovery). The daily
 # COP sensors include it, because they use the meters.
 template:
@@ -111,6 +111,7 @@ template:
           {% set flow = states('sensor.bridge0_sensors_flow') | float(0) %}
           {% set lwt = states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(none) %}
           {% set rwt = states('sensor.bridge0_sensors_temperature_r4t_return_water') | float(none) %}
-          {% set w = (flow * (rwt - lwt) * 4186 / 60) if lwt is not none and rwt is not none else 0 %}
+          {# R4T reads ~0.61 K high (see packages/ashp_heat_output.yaml) #}
+          {% set w = (flow * (rwt - 0.61 - lwt) * 4186 / 60) if lwt is not none and rwt is not none else 0 %}
           {% set add = ([w, 0] | max) * 10 / 3600000 if trigger.id == 'tick' else 0 %}
           {{ ((this.state | float(0)) + add) | round(4) }}

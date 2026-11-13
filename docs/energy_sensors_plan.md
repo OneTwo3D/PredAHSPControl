@@ -195,3 +195,9 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   13 Nov: `load_ml_database_days: 28` in apps.yaml (only data since 15 Oct) and predbat_ml_model.npz +
   predbat_ml_history.npz deleted (HA VM /mnt/data/supervisor/app_configs/6adb4f0d_predbat/) so it starts
   fresh. `load_ml_enable` still false.
+* 13 Nov 2026: return-water sensor offset. R4T reads ~0.61 K above R1T/R10T (2,988 steady idle minutes;
+  constant across water-outside differences, so not a heat loss). Daikin's heat counter is unaffected (matches
+  flow x (R1T - R4T + 0.61 K) on 6-9 Nov); sensor.bridge0_power_production_heatpump reads ~500 W low (negative
+  when idle, ~1/3 low when running). New `packages/ashp_heat_output.yaml`: sensor.ashp_heat_output (corrected),
+  now used on the ASHP dashboard (row, gauge, chart); ashp_defrost heat-drawn uses the same correction.
+  MPC learning is unaffected (uses the counters; R4T/heat_w only kept as unused hourly means).

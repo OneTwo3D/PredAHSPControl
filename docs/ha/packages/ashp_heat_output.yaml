@@ -1,0 +1,32 @@
+# ASHP heat output corrected for the return-water sensor offset.
+#
+# The return thermistor R4T reads ~0.61 K above both leaving-side sensors (R1T and R10T agree within
+# 0.01 K). Found 13 Nov 2026 from 2,988 steady idle minutes (pump on, compressor off > 20 min, no DHW):
+# R1T - R4T = -0.61 K on average, independent of the water-to-outside difference, i.e. an offset, not a
+# heat loss. Daikin's own heat counter (meters_energy_produced_compressor_heating) is not affected: it
+# matches flow x (R1T - R4T + 0.61 K) within its 1 kWh resolution on 6-9 Nov, and the uncorrected value is
+# about a third low. sensor.bridge0_power_production_heatpump (flow x (R1T - R4T)) therefore reads
+# ~500 W low at 12 L/min, negative whenever the pump runs with the compressor off.
+#
+# If the offset is re-measured, change it here and in packages/ashp_defrost.yaml.
+template:
+  - sensor:
+      - name: "ASHP heat output"
+        unique_id: ashp_heat_output_corrected
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        icon: mdi:heat-wave
+        availability: >
+          {{ has_value('sensor.bridge0_sensors_flow')
+             and has_value('sensor.bridge0_sensors_temperature_r1t_hp2gas_water')
+             and has_value('sensor.bridge0_sensors_temperature_r4t_return_water') }}
+        state: >
+          {% set offset_k = 0.61 %}
+          {% set flow = states('sensor.bridge0_sensors_flow') | float(0) %}
+          {% set lwt = states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(0) %}
+          {% set rwt = states('sensor.bridge0_sensors_temperature_r4t_return_water') | float(0) %}
+          {{ (flow * (lwt - rwt + offset_k) * 4186 / 60) | round(0) if flow > 0 else 0 }}
+        attributes:
+          return_offset_k: 0.61
+          note: "flow x (R1T - R4T + 0.61 K); R4T reads ~0.61 K high"
