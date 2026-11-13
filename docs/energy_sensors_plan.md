@@ -215,4 +215,13 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
     <- sensor.ashp_dhw_heat_output; method left, kWh (prefix k, per h), round 3, max_sub_interval 1 min.
   - Utility meters "ASHP {heating,DHW} heat measured {daily,weekly,monthly,yearly}" on those integrals;
     net_consumption on, periodically_resetting off (net heat: idle residual and defrost can dip slightly).
-  Next: run 1-2 weeks next to the Daikin-counter COP; then switch the COP sensors and the MPC heat_kwh mapping.
+  Switched the same day (13 Nov ~13:50 GMT, owner's call):
+  - COP sensors (`packages/ashp_cop.yaml`, same unique_ids) use the measured meters; until each period rolls over
+    the Daikin-counter value at the switch is added (daily 11/0 kWh heating/DHW until 14 Nov, weekly 75/13 until
+    16 Nov, monthly 177/31 until 1 Dec, yearly 2104/788 until 1 Jan 2027).
+  - Daikin MPC reconfigured (learned state kept): heat_kwh -> sensor.ashp_heating_heat_measured, dhw_heat_kwh ->
+    sensor.ashp_dhw_heat_measured, heat_w -> sensor.ashp_heat_output, rwt -> sensor.ashp_return_temperature.
+    The counter jump makes 13 Nov a new baseline, so 13 Nov is not learned from.
+  - New sensor.ashp_total_heat_measured_daily (heating + DHW, +11 kWh on 13 Nov only): HA ASHP page 'Heat made'
+    and tablet 'COP today' (ha-energy-dashboard c615265).
+  - Daikin's counters stay available for the cross-check (first one due 20 Nov).

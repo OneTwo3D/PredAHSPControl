@@ -282,7 +282,7 @@
        "name": "Standby"
       },
       {
-       "entity": "sensor.ashp_total_energy_produced_daily",
+       "entity": "sensor.ashp_total_heat_measured_daily",
        "name": "Heat made"
       }
      ]

@@ -57,6 +57,20 @@ template:
           {{ states('sensor.ashp_heat_output') | float(0)
              if is_state('binary_sensor.bridge0_dhw_valve_dhw_tank', 'on') else 0 }}
 
+      # Heat made today (heating + DHW, measured), for the "Today" displays (HA ASHP page, tablet COP today).
+      # 13 Nov 2026 only: + 11 kWh, the Daikin-counter heat before the measured meters started at 13:42 GMT.
+      - name: "ASHP total heat measured daily"
+        unique_id: ashp_total_heat_measured_daily
+        unit_of_measurement: "kWh"
+        device_class: energy
+        icon: mdi:heat-wave
+        availability: >
+          {{ has_value('sensor.ashp_heating_heat_measured_daily') and has_value('sensor.ashp_dhw_heat_measured_daily') }}
+        state: >
+          {% set carry = 11 if now() < as_datetime('2026-11-14T00:00:00+00:00') else 0 %}
+          {{ (states('sensor.ashp_heating_heat_measured_daily') | float(0)
+              + states('sensor.ashp_dhw_heat_measured_daily') | float(0) + carry) | round(2) }}
+
       - name: "ASHP return temperature"
         unique_id: ashp_return_temperature_corrected
         unit_of_measurement: "°C"
