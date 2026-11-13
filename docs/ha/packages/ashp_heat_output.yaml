@@ -31,6 +31,32 @@ template:
           return_offset_k: 0.61
           note: "flow x (R1T - R4T + 0.61 K); R4T reads ~0.61 K high"
 
+      # Corrected heat output split by the DHW 3-way valve, for the measured-heat integrals (UI helpers
+      # "ASHP heating heat measured" / "ASHP DHW heat measured" and their daily..yearly utility meters).
+      # Net values: idle pump residual (~ -10 W) and heat drawn back during a defrost count negative.
+      # Checked 20 Oct - 10 Nov: heating 235.0 vs Daikin counter 237 kWh, DHW 44.9 vs 47 kWh.
+      - name: "ASHP heating heat output"
+        unique_id: ashp_heating_heat_output
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        icon: mdi:radiator
+        availability: "{{ has_value('sensor.ashp_heat_output') }}"
+        state: >
+          {{ 0 if is_state('binary_sensor.bridge0_dhw_valve_dhw_tank', 'on')
+             else states('sensor.ashp_heat_output') | float(0) }}
+
+      - name: "ASHP DHW heat output"
+        unique_id: ashp_dhw_heat_output
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        icon: mdi:water-boiler
+        availability: "{{ has_value('sensor.ashp_heat_output') }}"
+        state: >
+          {{ states('sensor.ashp_heat_output') | float(0)
+             if is_state('binary_sensor.bridge0_dhw_valve_dhw_tank', 'on') else 0 }}
+
       - name: "ASHP return temperature"
         unique_id: ashp_return_temperature_corrected
         unit_of_measurement: "°C"

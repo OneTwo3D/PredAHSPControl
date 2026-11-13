@@ -207,3 +207,12 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   dashboard flow-temperature chart uses it. Tablet dashboard (ha-energy-dashboard ac365f0, deployed
   ac365f0-20261113133738): heat output / COP now / flow-diagram heat use sensor.ashp_heat_output, Return uses
   sensor.ashp_return_temperature.
+* 13 Nov 2026: measured heat from the corrected flow x dT (finer than Daikin's whole-kWh counters; 20 Oct-10 Nov
+  heating 235.0 vs counter 237 kWh, DHW 44.9 vs 47 kWh). `packages/ashp_heat_output.yaml`:
+  sensor.ashp_heating_heat_output / sensor.ashp_dhw_heat_output (split by binary_sensor.bridge0_dhw_valve_dhw_tank).
+  UI helpers (Settings -> Helpers, not YAML, so no restart was needed):
+  - Integration (Riemann): "ASHP heating heat measured" <- sensor.ashp_heating_heat_output, "ASHP DHW heat measured"
+    <- sensor.ashp_dhw_heat_output; method left, kWh (prefix k, per h), round 3, max_sub_interval 1 min.
+  - Utility meters "ASHP {heating,DHW} heat measured {daily,weekly,monthly,yearly}" on those integrals;
+    net_consumption on, periodically_resetting off (net heat: idle residual and defrost can dip slightly).
+  Next: run 1-2 weeks next to the Daikin-counter COP; then switch the COP sensors and the MPC heat_kwh mapping.
