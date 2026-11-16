@@ -5,6 +5,22 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.3] - 2026-11-16
+
+### Fixed
+- **A short outage could cost a training day.** A date was rejected whenever the counters were unreadable
+  at any moment in the next date's first hour: on 15 Nov 2026 a 3-minute MQTT/network blip at 00:51 (one
+  5-minute sample) discarded the complete 14 Nov. The rule is now precise: a date is complete when live
+  readings of every counter bracket midnight within 20 minutes (`MAX_GAP_S`); outages elsewhere in the
+  first hour, and short HA restarts, no longer matter. A longer outage across midnight still drops it.
+- **Energy of an interval reaching back past an hour's start** (its crossing sample stale or missed, e.g.
+  after an HA restart) was booked entirely to the later hour; the earlier share now goes to the previous
+  hour, so a date keeps its share of an interval spanning midnight.
+
+### Changed
+- Hour records carry `counter_bracket` and `deltas_before_kwh` (saved state from 0.6.2 loads unchanged;
+  its hours keep the old boundary rule).
+
 ## [0.6.2] - 2026-10-18
 
 ### Fixed
