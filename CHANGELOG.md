@@ -5,6 +5,21 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.5] - 2026-11-16
+
+### Fixed
+- **Room forecasts were too cold whenever the heat pump ran** (3 h bias −0.18 K, MAE 0.36 K). The radiator
+  constant K = 63.1 came from the 2025/26 offline fit on the bridge's flow × ΔT, whose return sensor reads
+  ~0.6 K high; refitted with the corrected heat (2-13 Nov 2026, 2,571 steady samples) it is 84.4, i.e. the
+  radiators emit about a third more than modelled. Default now 84.4 (replay 9-16 Nov: 3 h MAE 0.368 → 0.323 K,
+  bias −0.18 → −0.12 K; 6 h MAE 0.51 → 0.44 K).
+
+### Added
+- **K is learned online** from steady space heating (compressor running ≥ 20 min, no DHW, no defrost, flow
+  ≥ 5 L/min, MWT − Ti ≥ 3 K): median of the last 600 samples (~50 h), used after 72 samples (~6 h), saved
+  with the learned state. Uses the mapped heat output, which must be the corrected one. Shown as
+  `radiator_k` / `radiator_samples` on *Required flow temperature*. Replay 9-16 Nov: learns ~77, 3 h MAE 0.330 K.
+
 ## [0.6.4] - 2026-11-16
 
 ### Fixed

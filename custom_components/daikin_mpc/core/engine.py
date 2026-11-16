@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -35,6 +35,7 @@ from .heatpump_model import CopCurve
 from .learner import BuildingLearner, LearnerConfig
 from .optimiser import OptimiserConfig, PlanInputs, Recommendation, recommend
 from .predictor import Forecast, PlantParams, forecast
+from .radiator_learner import RadiatorLearner
 from .telemetry import Role, ValidatedSnapshot
 from .thermal_model import ThermalParams
 from .timeutil import add_hours, elapsed_h, elapsed_s, hour_key
@@ -55,7 +56,9 @@ class EngineConfig:
     # 3.0 ± 0.8 but identifies C poorly. Refined online by the capacity learner.
     c_wh_per_k: float = 5500.0
     prior_sd: tuple[float, float, float] = (10.0, 80.0, 1500.0)
-    radiator_k: float = 63.1
+    # refitted Nov 2026 from steady space heating with the corrected heat (return sensor ~0.6 K high); the
+    # winter 2025/26 fit (63.1) used the uncorrected flow x dT and was about a third low. Refined online.
+    radiator_k: float = 84.4
     radiator_n: float = 1.3
     q_min_w: float = 680.0
     q_max_w: float = 4300.0
@@ -129,6 +132,9 @@ class EngineStatus:
     # inputs of lwt_required_c: heat the emitters must deliver, and the measured gains taken off
     lwt_required_heat_w: float | None = None
     lwt_required_gains_w: float | None = None
+    # radiator constant in use (learned from steady space heating once enough samples exist) and samples
+    radiator_k: float | None = None
+    radiator_samples: int = 0
 
 
 def required_lwt(
@@ -174,6 +180,8 @@ class ShadowEngine:
         self.plant = PlantParams(
             RadiatorParams(c.radiator_k, c.radiator_n), c.q_min_w, c.q_max_w, min_lwt_c=c.min_lwt_c
         )
+        self.radiator_learner = RadiatorLearner(n=c.radiator_n)
+        self._space_heating_since: datetime | None = None
         self.cop_prior = CopCurve(tuple(c.cop_centres_c), tuple(c.cop_values), (), ())
         self.cop_learner = CopLearner(self.cop_prior)
         self.cop_curve = self.cop_prior
@@ -296,6 +304,9 @@ class ShadowEngine:
                 )
             self.lwt_offset_k = 0.95 * self.lwt_offset_k + 0.05 * (lwt_set - mod - self.wc_lwt(to))
 
+        # 2b. radiator constant from steady space heating (the water's heat is what the radiators emit)
+        self._learn_radiator(s, t, ti, hz)
+
         # 3. score matured predictions
         if ti is not None:
             keep = []
@@ -385,7 +396,38 @@ class ShadowEngine:
             capacity_nights=self.capacity.nights,
             capacity_pairs=round(self.capacity.n, 1),
             tau_h=round(self.capacity_estimate.tau_h, 1) if self.capacity_estimate is not None else None,
+            radiator_k=self.plant.radiator.k_w_per_kn,
+            radiator_samples=len(self.radiator_learner.samples),
         )
+
+    def _learn_radiator(self, s: ValidatedSnapshot, t: datetime, ti: float | None, hz: float | None) -> None:
+        """Add a sample once space heating has run steadily for a while; apply the median to the plant."""
+        steady = (
+            s.complete
+            and hz is not None
+            and hz > 0
+            and not s.get(Role.DHW_ACTIVE)
+            and not s.get(Role.DEFROST)
+        )
+        if not steady:
+            self._space_heating_since = None
+            return
+        since = self._space_heating_since
+        if since is None or elapsed_s(since, t) < 0:
+            self._space_heating_since = since = t
+        rl = self.radiator_learner
+        if not self.cfg.learning_enabled or elapsed_s(since, t) < rl.min_run_s:
+            return
+        q, lwt, rwt, flow = s.get(Role.HEAT_W), s.get(Role.LWT), s.get(Role.RWT), s.get(Role.FLOW)
+        if q is None or lwt is None or rwt is None or flow is None or ti is None or flow < rl.min_flow_l_min:
+            return
+        if rl.add(q, (lwt + rwt) / 2, ti):
+            self._apply_radiator()
+
+    def _apply_radiator(self) -> None:
+        k = self.radiator_learner.estimate()
+        if k is not None and k != self.plant.radiator.k_w_per_kn:
+            self.plant = replace(self.plant, radiator=RadiatorParams(k, self.cfg.radiator_n))
 
     @property
     def standby_w(self) -> float:
@@ -558,6 +600,7 @@ class ShadowEngine:
             "gains": self.gains_fc.to_dict(),
             "gains_basis": self._gains_basis,
             "basis_changed_day": self._basis_changed_day,
+            "radiator": self.radiator_learner.to_dict(),
         }
 
     def load_dict(self, d: dict[str, Any]) -> list[str]:
@@ -606,6 +649,16 @@ class ShadowEngine:
                 fn()
             except Exception as e:
                 warn.append(f"{name} ignored: {e!r}")
+        if "radiator" in d:
+            try:
+                rad_ok = self.radiator_learner.load_dict(dict(d["radiator"]))
+            except Exception:
+                rad_ok = False
+            if rad_ok:
+                self._apply_radiator()
+            else:
+                self.radiator_learner = RadiatorLearner(n=self.cfg.radiator_n)
+                warn.append("radiator learner state invalid; using the configured constant")
         if "cop_learner" in d:
             try:
                 ok = self.cop_learner.load_dict(d["cop_learner"])
