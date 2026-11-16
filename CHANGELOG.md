@@ -5,6 +5,15 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.4] - 2026-11-16
+
+### Fixed
+- **A calm night could cost a training day.** The outdoor temperature counted as stale after 3 h without
+  a change, but the Daikin sensor reports in 0.5 K steps and the bridge publishes on change only: on
+  11 Nov 2026 it stayed unchanged 03:40-07:10, every snapshot was incomplete and the day was lost. While
+  the bridge heartbeat is live the limit is now 12 h (`TO_MAX_AGE_LIVE_BRIDGE_S`); without a live
+  heartbeat it stays 3 h.
+
 ## [0.6.3] - 2026-11-16
 
 ### Fixed

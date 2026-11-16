@@ -108,6 +108,10 @@ DEFAULT_MAX_AGE_S: dict[Role, float] = {
     Role.INVERTER_LOSS_W: 2 * 3600.0,
 }
 FALLBACK_MAX_AGE_S = math.inf
+# While the bridge heartbeat is live, an unchanged outdoor temperature is steady, not stale: the Daikin
+# sensor reports in 0.5 K steps and stayed unchanged for 3.5 h on a calm night (11 Nov 2026), which cost a
+# complete day. A dead source is still caught after this long (or after 3 h without a live heartbeat).
+TO_MAX_AGE_LIVE_BRIDGE_S = 12 * 3600.0
 
 
 @dataclass(frozen=True)
@@ -147,6 +151,9 @@ class ValidatedSnapshot:
 def validate(s: Snapshot, max_age_s: dict[Role, float] | None = None) -> ValidatedSnapshot:
     """Validate a snapshot. Missing optional roles are not issues; missing required roles are."""
     ages = {**DEFAULT_MAX_AGE_S, **(max_age_s or {})}
+    hb = s.readings.get(Role.HEARTBEAT)
+    if hb is not None and hb.value is not None and hb.age_s <= ages[Role.HEARTBEAT]:
+        ages[Role.TO] = max(ages.get(Role.TO, FALLBACK_MAX_AGE_S), TO_MAX_AGE_LIVE_BRIDGE_S)
     values: dict[Role, float] = {}
     issues: dict[Role, str] = {}
     for role, rd in s.readings.items():
