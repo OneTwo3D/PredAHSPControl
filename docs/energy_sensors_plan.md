@@ -240,5 +240,5 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   sampling phase onto it): any stale counter sample in a date's first hour discarded the previous date. Fixed
   in daikin_mpc 0.6.3 (branch `mpc-midnight-boundary`, e5fd781): a date is complete when live readings of all
   counters bracket midnight within 20 min; interval energy reaching back past an hour start is booked to the
-  previous hour. Replay of 13-15 Nov: 0.6.2 drops 14 Nov, 0.6.3 keeps it. Files staged on HA 16 Nov
-  ~09:10 GMT; active after the next HA restart.
+  previous hour. Replay of 13-15 Nov: 0.6.2 drops 14 Nov, 0.6.3 keeps it. Deployed 16 Nov ~09:05 GMT (HA
+  restart; loaded 0.6.3, no load warnings, learned state and today's hours kept).
