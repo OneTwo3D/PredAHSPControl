@@ -250,3 +250,11 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   section of .storage/daikin_mpc.<entry> changed, re-enabled). Result: 18 training days, UA 79.77 -> 75.70
   (±4.57) W/K, base gains 85 -> 111 W, C 5.011 -> 4.965 kWh/K, none rejected. Backup of the previous state:
   /homeassistant/daikin_mpc_store_backup_20261116.json (restore: disable entry, copy back, enable).
+* 16 Nov 2026: MPC prediction error analysed (2-16 Nov, 3 h horizon, error = predicted - actual): bias -0.23 K,
+  MAE 0.38 K; ~0 with the compressor off (cooling predicted well, so UA/C fine), -0.39 K while heating
+  mostly -> radiator model too weak. K refitted with corrected heat = 84.4 (old offline fit 63.1 used the
+  uncorrected flow x dT). daikin_mpc 0.6.5 (56788e1) deployed ~17:25 GMT: default K 84.4 + online K learner
+  (median of 600 steady space-heating samples, used after 72). Replay 9-16 Nov: 3 h MAE 0.368 -> 0.323 K
+  (fixed 84.4) / 0.330 K (learned, settles ~77); remaining bias ~-0.12 K mostly 03-09 h and 15-21 h
+  (heating start/setpoint behaviour, not modelled yet). The prediction_error sensors are long-run averages
+  and will improve only slowly.
