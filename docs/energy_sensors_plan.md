@@ -242,3 +242,11 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   counters bracket midnight within 20 min; interval energy reaching back past an hour start is booked to the
   previous hour. Replay of 13-15 Nov: 0.6.2 drops 14 Nov, 0.6.3 keeps it. Deployed 16 Nov ~09:05 GMT (HA
   restart; loaded 0.6.3, no load warnings, learned state and today's hours kept).
+* 16 Nov 2026: daikin_mpc 0.6.4 (outdoor temperature counts as steady up to 12 h while the bridge heartbeat is
+  live; 11 Nov was lost to a 3.5 h unchanged Daikin outdoor reading) deployed ~09:29 GMT (HA restart).
+  Backfill of the lost training days: 10-15 Nov rebuilt by replaying HA history through 0.6.4 (measured heat =
+  corrected flow x dT split by DHW valve; 15 Nov matched the live record except gains, 214 vs 199 W) and the
+  pairs 10->11 ... 14->15 applied to the saved learner in date order (integration disabled, only the 'learner'
+  section of .storage/daikin_mpc.<entry> changed, re-enabled). Result: 18 training days, UA 79.77 -> 75.70
+  (±4.57) W/K, base gains 85 -> 111 W, C 5.011 -> 4.965 kWh/K, none rejected. Backup of the previous state:
+  /homeassistant/daikin_mpc_store_backup_20261116.json (restore: disable entry, copy back, enable).
