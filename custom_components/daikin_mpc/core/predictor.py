@@ -26,12 +26,14 @@ class PlantParams:
     q_min_w: float = 680.0
     q_max_w: float = 4300.0
     flow_return_dt_k: float = 2.0
-    hysteresis_on_k: float = 1.0  # starts when Ti <= setpoint - this
-    hysteresis_off_k: float = 0.5  # stops when Ti >= setpoint + this
+    # measured from zone-valve switches (6-16 Nov 2026): starts at setpoint − 0.4 K, runs on to ≥ + 0.9 K
+    hysteresis_on_k: float = 0.4  # starts when Ti <= setpoint - this
+    hysteresis_off_k: float = 0.9  # stops when Ti >= setpoint + this
     min_lwt_c: float = MIN_LWT_C
     # Daikin RT mode raises/lowers the requested LWT with the room-temperature error (field settings
     # 8-05/8-06: modulation on, max 5 K). Gain is a prior until learned from data.
-    rt_modulation_gain_k_per_k: float = 5.0
+    # measured 0.655 K/K (Nov 2026 regression); learned online by WeatherCurveLearner
+    rt_modulation_gain_k_per_k: float = 0.65
     rt_modulation_max_k: float = 5.0
 
 

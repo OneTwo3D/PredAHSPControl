@@ -5,6 +5,25 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.6] - 2026-11-17
+
+### Fixed
+- **The model of how the Daikin answers a room setpoint did not match the unit** (review of Nov 2026 data):
+  - Thermostat band: heating starts at setpoint − 0.4 K and runs on to + 0.9 K (zone-valve switches
+    6-16 Nov); was − 1.0 / + 0.5 K, so the model missed the early-morning start.
+  - RT modulation: 0.65 K per K of room error (regression over 6,403 heating minutes); was 5 K/K, which
+    credited a raised setpoint with roughly double the heat and overstated cheap-window preheat.
+  - Weather curve: 30.6 − 0.58·To (was −23 → 47, 10 → 25 °C, ~1.5 K off at −5 °C).
+  - Actual leaving water runs 1.8 K above the unit's own LWT setpoint in steady space heating (compressor
+    at minimum speed); the forecast now adds this learned offset. The former offset absorbed the wrong
+    modulation and is discarded.
+  Replay 9-16 Nov: 3 h MAE 0.330 → 0.267 K (bias −0.13 → +0.03 K), 6 h 0.449 → 0.380 K.
+
+### Added
+- **Weather curve and RT gain learned online** from the unit's LWT setpoint (weighted least squares with
+  forgetting, ~a week of heating; used after ~a day of samples once the outdoor temperature has varied).
+- **Actual-LWT offset learned** from steady space heating (prior 1.8 K).
+
 ## [0.6.5] - 2026-11-16
 
 ### Fixed

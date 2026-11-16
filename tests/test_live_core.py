@@ -133,7 +133,10 @@ def test_learner_state_roundtrip_and_corrupt_rejected():
 
 # --- predictor ---------------------------------------------------------------------------
 B = ThermalParams(94.0, 3000.0, 440.0)
-PL = PlantParams(RadiatorParams(63.1, 1.3))
+# mechanism tests: a synthetic plant with strong RT modulation (the pre-0.6.6 defaults), not this house
+PL = PlantParams(
+    RadiatorParams(63.1, 1.3), rt_modulation_gain_k_per_k=5.0, hysteresis_on_k=1.0, hysteresis_off_k=0.5
+)
 
 
 def test_heating_disabled_house_cools():
