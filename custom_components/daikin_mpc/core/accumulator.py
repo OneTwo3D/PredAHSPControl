@@ -58,6 +58,8 @@ class HourRecord:
     # since the previous reading reached back past it, e.g. after a stale sample or HA restart); booked to
     # the previous hour by DayAggregator, so a date keeps its share of an interval spanning midnight
     deltas_before_kwh: dict[str, float] = field(default_factory=dict)
+    # share of the hour each mean actually covers (an optional sensor may be missing for part of it)
+    mean_cover: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -89,6 +91,7 @@ class HourRecord:
             deltas_before_kwh={
                 str(k): _num_in(v, 0.0) for k, v in dict(d.get("deltas_before_kwh") or {}).items()
             },
+            mean_cover={str(k): _num_in(v, 0.0, 1.0) for k, v in dict(d.get("mean_cover") or {}).items()},
         )
         if rec.cls != IntervalClass.INVALID.value and not {"ti", "to"} <= rec.means.keys():
             raise ValueError("usable hour without temperature means")
@@ -422,6 +425,7 @@ class HourAccumulator:
             a.counter_restart,
             a.bracket,
             dict(a.before),
+            mean_cover={k: min(1.0, w / 3600.0) for k, w in a.weights.items()},
         )
 
 

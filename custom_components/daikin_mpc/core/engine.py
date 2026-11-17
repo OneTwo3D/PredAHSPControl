@@ -246,15 +246,24 @@ class ShadowEngine:
     def cop(self, to_c: float) -> float:
         return self.cop_curve.at(to_c)[0]
 
-    def wc_lwt(self, to_c: float) -> float:
-        """The unit's weather-curve LWT (without RT modulation): learned once identified, else the config."""
+    def wc_lwt(self, to_c: float, clamp: bool = True) -> float:
+        """The unit's weather-curve LWT (without RT modulation): learned once identified, else the config.
+
+        ``clamp=False`` gives the curve below the unit's minimum LWT: the plant model clamps the setpoint
+        once, after RT modulation, as the unit does.
+        """
         est = self.wc_learner.estimate()
         if est is not None:
             a, b, _ = est
-            return max(a + b * to_c, self.cfg.min_lwt_c)
-        xs = [p[0] for p in self.cfg.wc_curve]
-        ys = [p[1] for p in self.cfg.wc_curve]
-        return max(float(np.interp(to_c, xs, ys)), self.cfg.min_lwt_c)
+            v = a + b * to_c
+        else:
+            xs = [p[0] for p in self.cfg.wc_curve]
+            ys = [p[1] for p in self.cfg.wc_curve]
+            v = float(np.interp(to_c, xs, ys, left=None, right=None))
+            # beyond the configured points the line continues (the clamp below/at the plant bounds it)
+            if to_c > xs[-1]:
+                v = ys[-1] + (ys[-1] - ys[0]) / (xs[-1] - xs[0]) * (to_c - xs[-1])
+        return max(v, self.cfg.min_lwt_c) if clamp else v
 
     def _apply_wc(self) -> None:
         est = self.wc_learner.estimate()
@@ -357,7 +366,7 @@ class ShadowEngine:
         if s.complete and ti is not None and to is not None:
             to_steps, source = self._to_steps(t, to, to_forecast)
             sps = [self._setpoint_at(add_hours(t, STEP_H * i), sp) for i in range(len(to_steps))]
-            lwts = [self.wc_lwt(x) for x in to_steps]
+            lwts = [self.wc_lwt(x, clamp=False) for x in to_steps]
             fc = forecast(
                 ti,
                 self._calling(s, hz),
@@ -493,6 +502,8 @@ class ShadowEngine:
             or h.counter_stale
             or h.deltas_kwh.get(Role.DHW_HEAT_KWH.value, 0.0) > 0
             or h.deltas_kwh.get(Role.BUH_KWH.value, 0.0) > 0
+            # the counter delta covers the whole hour: the heat-power mean must cover (nearly) all of it
+            or h.mean_cover.get(Role.HEAT_W.value, 0.0) < 0.85
         ):
             return
         dq, pw = h.deltas_kwh.get(Role.HEAT_KWH.value), h.means.get(Role.HEAT_W.value)
@@ -616,7 +627,7 @@ class ShadowEngine:
             current_setpoint_c=sp_now if sp_now is not None else baseline[0],
             heating_enabled=bool(enabled if enabled is not None else True),
             to_c=to_steps,
-            lwt_set_c=[self.wc_lwt(x) for x in to_steps],
+            lwt_set_c=[self.wc_lwt(x, clamp=False) for x in to_steps],
             rate_p=[cost.marginal_rate(add_hours(t, STEP_H * (i + 0.5))) for i in range(len(to_steps))],
             baseline_setpoint_c=baseline,
             target_c=comfort_targets(t, len(to_steps), STEP_H, comfort_periods),

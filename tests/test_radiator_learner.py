@@ -159,9 +159,11 @@ def test_reconciliation_counts_only_continuous_space_heating_hours():
     eng = ShadowEngine(EngineConfig())
 
     def hour(cls, deltas, heat_w=1000.0, dhw=False):
-        return HourRecord(
+        h = HourRecord(
             T0, 1.0, {"ti": 20.5, "to": 5.0, "heat_w": heat_w}, 30, 40, 12, deltas, False, dhw, cls
         )
+        h.mean_cover = {"ti": 1.0, "to": 1.0, "heat_w": 1.0}
+        return h
 
     eng._reconcile_heat(hour("heating_full", {"heat_kwh": 1.0, "dhw_heat_kwh": 0.0}))
     eng._reconcile_heat(hour("heating_full", {"heat_kwh": 1.0, "dhw_heat_kwh": 0.6}))  # DHW flag missing
@@ -170,3 +172,36 @@ def test_reconciliation_counts_only_continuous_space_heating_hours():
     eng._reconcile_heat(hour("off", {"heat_kwh": 0.0}, heat_w=-10.0))
     assert eng._heat_counter_kwh == pytest.approx(1.0)
     assert eng._heat_power_kwh == pytest.approx(1.0)
+
+
+def test_reconciliation_needs_heat_power_covering_the_counter_hour():
+    """Codex review PR #1 round 4: the counter delta covers the whole hour; a heat-power mean from only
+    part of it (sensor outage) must not enter the ratio."""
+    from custom_components.daikin_mpc.core.accumulator import HourRecord
+
+    eng = ShadowEngine(EngineConfig())
+    means = {"ti": 20.5, "to": 5.0, "heat_w": 1000.0}
+    part = HourRecord(T0, 1.0, means, 30, 40, 12, {"heat_kwh": 1.0}, False, False, "heating_full")
+    part.mean_cover = {"heat_w": 0.4}
+    eng._reconcile_heat(part)
+    assert eng._heat_counter_kwh == 0.0
+    full = HourRecord(T0, 1.0, means, 30, 40, 12, {"heat_kwh": 1.0}, False, False, "heating_full")
+    full.mean_cover = {"heat_w": 0.95}
+    eng._reconcile_heat(full)
+    assert eng._heat_counter_kwh == pytest.approx(1.0)
+    back = HourRecord.from_dict(json.loads(json.dumps(full.to_dict())))
+    assert back.mean_cover == full.mean_cover
+
+
+def test_hour_records_report_per_mean_coverage():
+    from custom_components.daikin_mpc.core.accumulator import HourAccumulator
+
+    acc = HourAccumulator()
+    out = []
+    for i in range(14):  # heat_w only in the first half of the hour
+        t = T0 + timedelta(minutes=5 * i)
+        vals = {"heat_w": 1000.0} if i < 6 else {}
+        out += acc.add(snap(t, **vals))
+    h = out[0]
+    assert h.mean_cover["ti"] == pytest.approx(h.coverage, abs=0.01)
+    assert h.mean_cover["heat_w"] < 0.6

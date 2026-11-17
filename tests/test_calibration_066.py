@@ -150,3 +150,11 @@ def test_actual_lwt_offset_is_added_after_the_minimum_clamp():
     _, _, q = plant_step(21.5, True, 12.0, 21.0, 25.0, True, b, p, 0.25)
     expected_mwt = 25.0 + 1.8 - p.flow_return_dt_k / 2
     assert q == pytest.approx(84.4 * (expected_mwt - 21.5) ** 1.3)
+
+
+def test_minimum_clamp_applies_after_rt_modulation():
+    """Codex review PR #1 round 4: in mild weather the base curve is below 25 °C; the unit clamps
+    curve + modulation, so the forecast must get the unclamped curve value."""
+    eng = ShadowEngine(EngineConfig())
+    assert eng.wc_lwt(15.0) == pytest.approx(25.0)  # displayed value: clamped
+    assert eng.wc_lwt(15.0, clamp=False) == pytest.approx(30.6 - 0.58 * 15, abs=0.05)  # 21.9
