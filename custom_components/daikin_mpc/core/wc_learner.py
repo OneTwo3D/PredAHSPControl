@@ -5,6 +5,10 @@ least squares with exponential forgetting (one sample per space-heating step), l
 towards the prior so a short or one-sided data set cannot produce nonsense. The estimate is only used
 once enough samples exist and the outdoor temperature has varied enough to identify the slope.
 
+Only unclamped setpoints are fitted: at the unit's minimum LWT (25 °C here, mild weather) the curve asks
+for less, so those readings are censored and the engine does not pass them in (they would flatten
+the slope and under-predict cold-weather LWT).
+
 Why: the hard-coded curve (−23 → 47, 10 → 25 °C) and an RT gain of 5 K/K did not match the unit; the
 Nov 2026 regression over 6,403 space-heating minutes gave 30.6 − 0.58·To + 0.655·(setpoint − Ti).
 """

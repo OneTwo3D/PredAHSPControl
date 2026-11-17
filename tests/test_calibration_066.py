@@ -118,3 +118,21 @@ def test_actual_lwt_offset_default_and_learning():
     old = ShadowEngine(EngineConfig())
     old.load_dict(state)
     assert old.lwt_offset_k == pytest.approx(1.8)
+
+
+def test_minimum_lwt_readings_do_not_flatten_the_learned_curve():
+    """Codex review PR #1: setpoints held at the unit's 25 °C minimum are censored (the curve asks for
+    less); fitting them as data flattened the slope and under-predicted cold-weather LWT."""
+    eng = ShadowEngine(EngineConfig())
+    t = T0
+    for i in range(4 * 288):  # four mild days: the unit sits at its 25 °C floor
+        to = 10.0 + (i % 60) / 10  # 10-16 °C
+        eng.process(_heating(t, to, 20.5, 20.3, 25.0), None, {}, None)
+        t += timedelta(minutes=5)
+    assert eng.wc_learner.estimate() is None  # nothing uncensored learned
+    assert eng.wc_lwt(-5.0) == pytest.approx(30.6 + 0.58 * 5, abs=0.05)  # configured curve kept
+    for i in range(2 * 288):  # then real, unclamped readings in colder weather
+        to = 2.0 + (i % 50) / 10  # 2-7 °C
+        eng.process(_heating(t, to, 20.5, 20.3, 30.6 - 0.58 * to + 0.65 * 0.2), None, {}, None)
+        t += timedelta(minutes=5)
+    assert eng.wc_lwt(-5.0) == pytest.approx(30.6 + 0.58 * 5, abs=0.3)

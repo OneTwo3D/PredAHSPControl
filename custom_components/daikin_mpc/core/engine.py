@@ -310,11 +310,13 @@ class ShadowEngine:
         lwt_set = s.get(Role.LWT_SET)
         # space heating only (DHW and defrost request very different LWTs): the unit's own setpoint
         # teaches the curve and the RT modulation together (replaces the former offset EMA, which
-        # subtracted a wrong modelled modulation and absorbed the error)
+        # subtracted a wrong modelled modulation and absorbed the error). A setpoint at the unit's
+        # minimum LWT is censored (the curve asks for less) and would flatten the fit: skipped.
         if (
             self.cfg.learning_enabled
             and s.complete
             and lwt_set is not None
+            and lwt_set > self.cfg.min_lwt_c + 0.25
             and to is not None
             and ti is not None
             and sp is not None
