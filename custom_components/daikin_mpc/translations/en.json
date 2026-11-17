@@ -161,7 +161,8 @@
           "gain_household_factor": "Share of household electricity that warms the house",
           "gain_solar_factor": "Solar gain (W per W/m²)",
           "gain_battery_loss_fraction": "Battery/inverter loss fraction",
-          "gain_tank_ua_w_per_k": "Hot-water tank heat loss (W/K)"
+          "gain_tank_ua_w_per_k": "Hot-water tank heat loss (W/K)",
+          "room_min_periods": "Lowest allowed temperature by time of day"
         },
         "data_description": {
           "room_min_c": "Recommendations keep the room at or above this all day and night.",
@@ -174,7 +175,8 @@
           "gain_household_factor": "Share of household electricity that warms the room. Default 0: last winter's data showed no measurable effect; its average is already in the base gains.",
           "gain_solar_factor": "Heat from the sun per W/m² of measured radiation; 1.5 from last winter.",
           "gain_battery_loss_fraction": "Loss share of the battery power, used only when no inverter-loss sensor is mapped.",
-          "gain_tank_ua_w_per_k": "Tank heat loss per K of tank-to-room difference; about 1.5 W/K for a 180 L cylinder."
+          "gain_tank_ua_w_per_k": "Tank heat loss per K of tank-to-room difference; about 1.5 W/K for a 180 L cylinder.",
+          "room_min_periods": "Optional: a different minimum for some hours, e.g. 00:00-06:00=19.5 for a night setback. The native schedule is judged by the same limits. Empty: the lowest allowed temperature applies all day."
         }
       }
     },
@@ -182,7 +184,8 @@
       "room_range": "Highest must be above lowest.",
       "bad_tariff": "Use HH:MM-HH:MM=price, covering the whole day.",
       "bad_periods": "Use HH:MM-HH:MM=°C, separated by commas.",
-      "comfort_outside_range": "Preferred temperatures must lie between the lowest and highest allowed."
+      "comfort_outside_range": "Preferred temperatures must lie between the lowest and highest allowed.",
+      "min_outside_range": "Minimum temperatures must be below the highest allowed."
     }
   },
   "selector": {

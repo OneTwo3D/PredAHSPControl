@@ -164,6 +164,7 @@ def test_reconciliation_counts_only_continuous_space_heating_hours():
             T0, 1.0, {"ti": 20.5, "to": 5.0, "heat_w": heat_w}, 30, 40, 12, deltas, False, dhw, cls
         )
         h.mean_cover = {"ti": 1.0, "to": 1.0, "heat_w": 1.0}
+        h.dhw_known_off = True
         return h
 
     eng._reconcile_heat(hour("heating_full", {"heat_kwh": 1.0, "dhw_heat_kwh": 0.0}))
@@ -184,10 +185,12 @@ def test_reconciliation_needs_heat_power_covering_the_counter_hour():
     means = {"ti": 20.5, "to": 5.0, "heat_w": 1000.0}
     part = HourRecord(T0, 1.0, means, 30, 40, 12, {"heat_kwh": 1.0}, False, False, "heating_full")
     part.mean_cover = {"heat_w": 0.4}
+    part.dhw_known_off = True
     eng._reconcile_heat(part)
     assert eng._heat_counter_kwh == 0.0
     full = HourRecord(T0, 1.0, means, 30, 40, 12, {"heat_kwh": 1.0}, False, False, "heating_full")
     full.mean_cover = {"heat_w": 0.95}
+    full.dhw_known_off = True
     eng._reconcile_heat(full)
     assert eng._heat_counter_kwh == pytest.approx(1.0)
     back = HourRecord.from_dict(json.loads(json.dumps(full.to_dict())))
@@ -231,6 +234,7 @@ def test_whole_kwh_counter_plateaus_do_not_bias_the_ratio():
             "heating_full",
         )
         h.mean_cover = {"heat_w": 1.0}
+        h.dhw_known_off = True
         eng._reconcile_heat(h)
     assert eng.heat_ratio() == pytest.approx(1.0, abs=0.04)
 
@@ -275,6 +279,7 @@ def test_late_counter_share_is_added_to_the_reconciled_hour():
             "heating_full",
         )
         h.mean_cover = {"heat_w": 1.0}
+        h.dhw_known_off = True
         h.deltas_before_kwh = before or {}
         h.counter_bracket = True  # a late share comes from a reading bracketing the boundary
         return h
@@ -348,6 +353,7 @@ def test_late_share_from_a_counter_reset_hour_is_not_booked():
             "heating_full",
         )
         h.mean_cover = {"heat_w": 1.0}
+        h.dhw_known_off = True
         h.deltas_before_kwh = before or {}
         h.counter_restart = restart
         return h
@@ -378,6 +384,7 @@ def test_late_share_after_a_brief_stale_reading_is_booked_when_bracketed():
             "heating_full",
         )
         h.mean_cover = {"heat_w": 1.0}
+        h.dhw_known_off = True
         h.deltas_before_kwh = before or {}
         h.counter_stale = stale
         h.counter_bracket = bracket
@@ -390,3 +397,41 @@ def test_late_share_after_a_brief_stale_reading_is_booked_when_bracketed():
     eng2._on_hour(hour(0, 0.8))
     eng2._on_hour(hour(1, 0.8, before={"heat_kwh": 0.2}, stale=True, bracket=None))  # not bracketed
     assert eng2._heat_counter_kwh == pytest.approx(0.8)
+
+
+def test_reconciliation_needs_dhw_known_off_for_the_whole_hour():
+    """Codex review PR #1 round 11: with the optional DHW-active reading missing, a short hot-water run can
+    leave the whole-kWh DHW counter unchanged; such an hour must not enter the heat comparison."""
+    from custom_components.daikin_mpc.core.accumulator import HourAccumulator, HourRecord
+
+    acc = HourAccumulator()
+    out = []
+    for i in range(14):
+        t = T0 + timedelta(minutes=5 * i)
+        out += acc.add(snap(t, dhw_active=0.0) if i != 5 else snap(t))  # one sample without the reading
+    assert out[0].dhw_known_off is False
+    acc2 = HourAccumulator()
+    out2 = []
+    for i in range(14):
+        out2 += acc2.add(snap(T0 + timedelta(minutes=5 * i), dhw_active=0.0))
+    assert out2[0].dhw_known_off is True
+
+    eng = ShadowEngine(EngineConfig())
+    h = HourRecord(
+        T0,
+        1.0,
+        {"ti": 20.5, "to": 5.0, "heat_w": 1000.0},
+        30,
+        40,
+        12,
+        {"heat_kwh": 1.0},
+        False,
+        False,
+        "heating_full",
+    )
+    h.mean_cover = {"heat_w": 1.0}
+    eng._reconcile_heat(h)  # dhw_known_off defaults to False (unknown)
+    assert eng._heat_counter_kwh == 0.0
+    h.dhw_known_off = True
+    eng._reconcile_heat(h)
+    assert eng._heat_counter_kwh == pytest.approx(1.0)

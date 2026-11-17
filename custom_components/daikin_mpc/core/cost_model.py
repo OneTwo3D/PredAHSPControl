@@ -118,12 +118,35 @@ class CostProvider:
     series: list[tuple[datetime, float]] | None = None  # import (slot start, rate), sorted
     export_series: list[tuple[datetime, float]] | None = None
     series_slot: timedelta = timedelta(minutes=30)
+    # Predbat's planned energy flows: cumulative kWh change points (predbat.import_energy /
+    # predbat.export_energy "results"). With them the battery basis prices each slot by what extra use
+    # really displaces: export (if Predbat exports then), grid import (if it imports at a non-cheap
+    # rate, i.e. the battery is empty), otherwise the battery, recharged at night.
+    import_flow: list[tuple[datetime, float]] | None = None
+    export_flow: list[tuple[datetime, float]] | None = None
+    flow_threshold_kwh: float = 0.02  # per slot; below this a flow counts as none
 
     def __post_init__(self) -> None:
         if self.basis not in ("battery", "tariff"):
             raise ValueError("basis must be 'battery' or 'tariff'")
         self._times = [x for x, _ in self.series] if self.series else []
         self._export_times = [x for x, _ in self.export_series] if self.export_series else []
+        self._imp_times = [x for x, _ in self.import_flow] if self.import_flow else []
+        self._exp_times = [x for x, _ in self.export_flow] if self.export_flow else []
+
+    @staticmethod
+    def _flow(
+        series: list[tuple[datetime, float]] | None, times: list[datetime], t: datetime, slot: timedelta
+    ) -> float | None:
+        """Energy of a cumulative series within [t, t + slot); None outside its horizon."""
+        if not series or t < times[0] or t + slot > times[-1]:
+            return None
+
+        def at(x: datetime) -> float:
+            i = bisect.bisect_right(times, x) - 1
+            return series[i][1]
+
+        return max(0.0, at(t + slot) - at(t))
 
     def _lookup(
         self,
@@ -213,12 +236,28 @@ class CostProvider:
         if self.basis == "tariff":
             return raw
         storage = self.charge_rate(t) / self.round_trip_efficiency
+        if raw <= storage:
+            return raw  # cheap window: straight from the grid
+        slot = self.series_slot
+        start = t - timedelta(minutes=t.minute % 30, seconds=t.second, microseconds=t.microsecond)
+        exp = self._flow(self.export_flow, self._exp_times, start, slot)
+        imp = self._flow(self.import_flow, self._imp_times, start, slot)
+        if exp is not None and imp is not None:
+            if exp > self.flow_threshold_kwh:
+                return max(storage, self.export_rate(t))  # extra use displaces export
+            if imp > self.flow_threshold_kwh:
+                return raw  # battery empty: extra use comes from the grid at this rate
+            return storage  # from the battery, recharged in the cheap window
+        # no flow forecast for this time: assume it could have been exported (conservative)
         return min(raw, max(storage, self.export_rate(t)))
 
     @property
     def source(self) -> str:
         base = "Predbat rates" if self.series else "fixed tariff"
-        return f"{base}, {'battery/export-aware' if self.basis == 'battery' else 'raw import tariff'}"
+        if self.basis != "battery":
+            return f"{base}, raw import tariff"
+        flows = " + Predbat flows" if self.import_flow and self.export_flow else ""
+        return f"{base}{flows}, battery/export-aware"
 
 
 def parse_rate_series(results: object) -> list[tuple[datetime, float]] | None:

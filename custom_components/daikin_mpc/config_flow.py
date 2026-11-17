@@ -26,6 +26,7 @@ from .const import (
     CONF_PREDHEAT_H8,
     CONF_ROOM_MAX,
     CONF_ROOM_MIN,
+    CONF_ROOM_MIN_PERIODS,
     CONF_SOLCAST,
     CONF_TARIFF_EXPORT,
     CONF_TARIFF_IMPORT,
@@ -159,6 +160,7 @@ OPTIONS_SCHEMA = vol.Schema(
             )
         ),
         vol.Required(CONF_COMFORT_PERIODS): selector.TextSelector(),
+        vol.Optional(CONF_ROOM_MIN_PERIODS, default=""): selector.TextSelector(),
         vol.Required(CONF_COST_BASIS): selector.SelectSelector(
             selector.SelectSelectorConfig(options=["battery", "tariff"], translation_key="cost_basis")
         ),
@@ -204,6 +206,12 @@ class DaikinMpcOptionsFlow(OptionsFlowWithReload):
                         errors[CONF_COMFORT_PERIODS] = "comfort_outside_range"
             except ValueError:
                 errors[CONF_COMFORT_PERIODS] = "bad_periods"
+            try:
+                for p in parse_periods(str(user_input.get(CONF_ROOM_MIN_PERIODS) or "")):
+                    if not 5.0 <= p.rate_p < float(user_input[CONF_ROOM_MAX]):
+                        errors[CONF_ROOM_MIN_PERIODS] = "min_outside_range"
+            except ValueError:
+                errors[CONF_ROOM_MIN_PERIODS] = "bad_periods"
             for key in (CONF_TARIFF_IMPORT, CONF_TARIFF_EXPORT):
                 try:
                     parse_tariff(str(user_input[key]))

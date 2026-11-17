@@ -192,7 +192,10 @@ def test_reported_cost_is_energy_times_price():
     assert sum(r.elec_kwh) > 0
     assert r.cost_p == pytest.approx(sum(e * p for e, p in zip(r.elec_kwh, rates, strict=False)))
     rec = recommend(inp, B, P, lambda _: 3.0, OptimiserConfig(horizon_h=6))
-    assert rec.saving_p == pytest.approx(rec.baseline.cost_p - rec.plan.cost_p)
+    # 0.7.0: the saving includes the heat left in the house at the end (both sides)
+    assert rec.saving_p == pytest.approx(
+        (rec.baseline.cost_p - rec.baseline.terminal_value_p) - (rec.plan.cost_p - rec.plan.terminal_value_p)
+    )
 
 
 def test_predbat_offsets_are_respected():

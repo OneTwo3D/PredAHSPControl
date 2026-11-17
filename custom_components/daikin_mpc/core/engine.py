@@ -502,6 +502,7 @@ class ShadowEngine:
             self._heat_counter_kwh += late
         if (
             h.cls != IntervalClass.HEATING_FULL.value
+            or not h.dhw_known_off
             or h.dhw
             or h.defrost
             or h.coverage < 0.85
@@ -613,6 +614,7 @@ class ShadowEngine:
         cost: CostProvider,
         cfg: OptimiserConfig,
         comfort_periods: tuple[TariffPeriod, ...] = (),
+        min_periods: tuple[TariffPeriod, ...] = (),
     ) -> Recommendation | None:
         """Shadow recommendation: cheapest hourly setpoint plan within the comfort range.
 
@@ -629,7 +631,12 @@ class ShadowEngine:
         if hours < 1:
             return None
         sp_now = s.get(Role.ROOM_SET)
-        baseline = [self._setpoint_at(add_hours(t, h), sp_now) for h in range(hours)]
+        # first decision to the next whole hour, then on the clock (setpoint changes meet tariff edges)
+        to_hour_h = 1.0 - (t.minute * 60 + t.second + t.microsecond / 1e6) / 3600.0
+        first = round(to_hour_h / STEP_H)
+        first_steps = first if 0 < first < per_h else per_h
+        starts = [0.0, *(first_steps * STEP_H + h for h in range(hours + 1))]
+        baseline = [self._setpoint_at(add_hours(t, x), sp_now) for x in starts]
         enabled = s.get(Role.HEATING_ENABLED)
         inp = PlanInputs(
             start=t,
@@ -643,6 +650,13 @@ class ShadowEngine:
             baseline_setpoint_c=baseline,
             target_c=comfort_targets(t, len(to_steps), STEP_H, comfort_periods),
             extra_gains_w=self._gains_steps(s, t, len(to_steps)),
+            min_c=[
+                cfg.room_min_c if v is None else v
+                for v in comfort_targets(t, len(to_steps), STEP_H, min_periods)
+            ]
+            if min_periods
+            else None,
+            first_block_steps=first_steps,
         )
         return recommend(inp, self.learner.params, self.plant, self.cop, cfg)
 
