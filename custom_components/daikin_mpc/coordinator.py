@@ -113,7 +113,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         stored = await self._store.async_load()
         if stored:
             stored = self._drop_remapped_counters(dict(stored))
-            stored = forget_recalibrated(stored, self._calibration_sources())
+            stored = forget_recalibrated(stored, self._calibration_sources(), self._wc_sources())
             self.load_warnings = self.engine.load_dict(stored)
             for w in self.load_warnings:
                 _LOGGER.warning("Daikin MPC state: %s", w)
@@ -125,7 +125,13 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             **self.engine.to_dict(),
             "counter_entities": self._counter_entities(),
             "calibration_sources": self._calibration_sources(),
+            "wc_sources": self._wc_sources(),
         }
+
+    def _wc_sources(self) -> dict[str, str]:
+        """Entities the weather curve, RT gain and actual-LWT offset are learned from."""
+        roles = (Role.TO, Role.TI, Role.ROOM_SET, Role.LWT_SET, Role.LWT)
+        return {r.value: str(self.mapping.get(r.value) or "") for r in roles}
 
     def _calibration_sources(self) -> dict[str, str]:
         """Entities the heat ratio and radiator constant are learned from."""

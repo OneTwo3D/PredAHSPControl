@@ -193,6 +193,7 @@ class ShadowEngine:
         # power scaled by their ratio, and only once it is established
         self._heat_counter_kwh = 0.0
         self._heat_power_kwh = 0.0
+        self._last_reconciled_start: datetime | None = None  # start of the last hour counted
         (x0, y0), (x1, y1) = c.wc_curve[0], c.wc_curve[-1]
         slope0 = (y1 - y0) / (x1 - x0) if x1 != x0 else 0.0
         self.wc_learner = WeatherCurveLearner(
@@ -492,6 +493,11 @@ class ShadowEngine:
         """Accumulate one finished hour of continuous space heating only: classified heating_full, well
         covered, no DHW/defrost flag and no DHW or backup-heater counter activity (a missing or late DHW
         flag must not let DHW heat power into the comparison)."""
+        # counter energy of the previous (counted) hour that arrived late, with this hour's first reading
+        late = h.deltas_before_kwh.get(Role.HEAT_KWH.value, 0.0)
+        prev, self._last_reconciled_start = self._last_reconciled_start, None
+        if late > 0 and prev is not None and elapsed_s(prev, h.start) == 3600:
+            self._heat_counter_kwh += late
         if (
             h.cls != IntervalClass.HEATING_FULL.value
             or h.dhw
@@ -513,6 +519,7 @@ class ShadowEngine:
             return
         self._heat_counter_kwh += dq
         self._heat_power_kwh += pw / 1000.0
+        self._last_reconciled_start = h.start
         if self._heat_counter_kwh > 400.0:  # slow forgetting: keep roughly the last few weeks
             self._heat_counter_kwh /= 2
             self._heat_power_kwh /= 2
@@ -876,14 +883,20 @@ class ShadowEngine:
 
 
 CALIBRATION_SECTIONS = ("heat_reconcile_kwh", "radiator")
+WC_SECTIONS = ("wc_learner", "lwt_actual_offset_k")
 
 
-def forget_recalibrated(stored: dict[str, Any], sources: dict[str, str]) -> dict[str, Any]:
-    """Drop the heat ratio and radiator samples when the heat-power or heat-counter source differs from
-    the one they were learned from (or is unknown, i.e. state saved before sources were recorded): the
-    old scaling would otherwise be applied to the new sensor's readings."""
+def forget_recalibrated(
+    stored: dict[str, Any], sources: dict[str, str], wc_sources: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Drop learned calibrations whose input entities changed (or are unknown, i.e. state saved before
+    they were recorded): the heat ratio and radiator samples follow the heat-power and heat-counter
+    sources; the weather curve and actual-LWT offset follow the temperature and setpoint inputs."""
     if stored.get("calibration_sources") != sources:
         for key in CALIBRATION_SECTIONS:
+            stored.pop(key, None)
+    if wc_sources is not None and stored.get("wc_sources") != wc_sources:
+        for key in WC_SECTIONS:
             stored.pop(key, None)
     return stored
 

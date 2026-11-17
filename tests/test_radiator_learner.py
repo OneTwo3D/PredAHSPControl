@@ -251,3 +251,51 @@ def test_calibration_is_forgotten_when_its_sources_change():
     fresh = ShadowEngine(EngineConfig())
     assert fresh.load_dict(changed) == []
     assert fresh.heat_ratio() is None and fresh.radiator_learner.samples == []
+
+
+def test_late_counter_share_is_added_to_the_reconciled_hour():
+    """Codex review PR #1 round 6: a pre-boundary share booked late (stale first sample of the next hour)
+    must reach the reconciliation of the hour it belongs to."""
+    from custom_components.daikin_mpc.core.accumulator import HourRecord
+
+    eng = ShadowEngine(EngineConfig())
+
+    def hour(i, dq, before=None):
+        h = HourRecord(
+            T0 + timedelta(hours=i),
+            1.0,
+            {"ti": 20.5, "to": 5.0, "heat_w": 1000.0},
+            30,
+            40,
+            12,
+            {"heat_kwh": dq},
+            False,
+            False,
+            "heating_full",
+        )
+        h.mean_cover = {"heat_w": 1.0}
+        h.deltas_before_kwh = before or {}
+        return h
+
+    eng._on_hour(hour(0, 0.8))  # its last 0.2 kWh arrives late, with the next hour
+    eng._on_hour(hour(1, 0.8, before={"heat_kwh": 0.2}))
+    assert eng._heat_counter_kwh == pytest.approx(1.8)
+
+
+def test_weather_curve_is_forgotten_when_its_inputs_change():
+    from custom_components.daikin_mpc.core.engine import forget_recalibrated
+
+    srcs = {"heat_w": "a", "heat_kwh": "b"}
+    wc_old = {"to": "sensor.daikin_outside", "ti": "t", "room_set": "s", "lwt_set": "l"}
+    state = {
+        "wc_learner": {"version": 1},
+        "lwt_actual_offset_k": 2.0,
+        "radiator": {},
+        "heat_reconcile_kwh": [1, 1],
+        "calibration_sources": srcs,
+        "wc_sources": wc_old,
+    }
+    kept = forget_recalibrated(dict(state), srcs, dict(wc_old))
+    assert "wc_learner" in kept and "radiator" in kept
+    moved = forget_recalibrated(dict(state), srcs, {**wc_old, "to": "sensor.ecowitt_outdoor_temperature"})
+    assert "wc_learner" not in moved and "radiator" in moved
