@@ -4,6 +4,7 @@ import http.server
 import itertools
 import sys
 import threading
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -33,7 +34,10 @@ from .test_live_core import snap
 
 LON = ZoneInfo("Europe/London")
 B = ThermalParams(94.0, 3000.0, 440.0)
-P = PlantParams(RadiatorParams(63.1, 1.3))
+# mechanism tests: a synthetic plant with strong RT modulation (the pre-0.6.6 defaults), not this house
+P = PlantParams(
+    RadiatorParams(63.1, 1.3), rt_modulation_gain_k_per_k=5.0, hysteresis_on_k=1.0, hysteresis_off_k=0.5
+)
 
 
 # --- time zones / daylight saving -------------------------------------------------------
@@ -130,7 +134,7 @@ def test_dhw_does_not_shift_the_lwt_offset():
     t = datetime(2026, 11, 2, 10, 0, tzinfo=UTC)
     for i in range(12):
         eng.process(snap(t + timedelta(minutes=5 * i), dhw_active=1.0, lwt_set=50.0, ti=20.0), None)
-    assert eng.lwt_offset_k == 0.0
+    assert eng.lwt_offset_k == EngineConfig().lwt_actual_offset_k  # unchanged from its prior
 
 
 @pytest.mark.parametrize(
@@ -294,7 +298,9 @@ def test_ha_client_refuses_webhooks_and_redirects(monkeypatch):
 
 # --- round 2 ----------------------------------------------------------------------------
 def test_dp_keeps_the_path_needed_for_hard_limits():
-    eng = ShadowEngine(EngineConfig())
+    # the original scenario: pre-0.6.6 curve and strong RT modulation (mechanism, not calibration)
+    eng = ShadowEngine(EngineConfig(wc_curve=((-23.0, 47.0), (10.0, 25.0))))
+    eng.plant = replace(eng.plant, rt_modulation_gain_k_per_k=5.0, hysteresis_on_k=1.0, hysteresis_off_k=0.5)
     b = ThermalParams(178.35, 3178.78, 191.99)
     to = [t for t in (7.0563, 13.9977, -6.5047, -7.3516) for _ in range(4)]
     inp = PlanInputs(

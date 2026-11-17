@@ -272,6 +272,8 @@ SENSORS: tuple[MpcSensorDescription, ...] = (
             "base_gains_w": round(s.gains),
             "measured_gains_w": None if s.lwt_required_gains_w is None else round(s.lwt_required_gains_w),
             "ua_w_per_k": round(s.ua, 1),
+            "radiator_k": None if s.radiator_k is None else round(s.radiator_k, 1),
+            "radiator_samples": s.radiator_samples,
         },
     ),
     *(

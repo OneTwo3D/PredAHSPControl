@@ -50,6 +50,16 @@ class HourRecord:
     # a counter started a new baseline after its date began (first reading, re-mapping, lost state): the
     # date's energy before that point was not observed, so the date is incomplete
     counter_restart: bool = False
+    # the hour's first complete live counter reading followed the previous one within MAX_GAP_S, so energy
+    # across the hour's start was measured and split by time; None: no such reading in the hour (or state
+    # saved before this field existed). Decides whether a date is complete at midnight.
+    counter_bracket: bool | None = None
+    # counter energy measured in this hour's first readings that belongs before its start (the interval
+    # since the previous reading reached back past it, e.g. after a stale sample or HA restart); booked to
+    # the previous hour by DayAggregator, so a date keeps its share of an interval spanning midnight
+    deltas_before_kwh: dict[str, float] = field(default_factory=dict)
+    # share of the hour each mean actually covers (an optional sensor may be missing for part of it)
+    mean_cover: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -77,6 +87,11 @@ class HourRecord:
             counter_gap=bool(d.get("counter_gap", False)),
             counter_stale=bool(d.get("counter_stale", False)),
             counter_restart=bool(d.get("counter_restart", False)),
+            counter_bracket=None if d.get("counter_bracket") is None else bool(d["counter_bracket"]),
+            deltas_before_kwh={
+                str(k): _num_in(v, 0.0) for k, v in dict(d.get("deltas_before_kwh") or {}).items()
+            },
+            mean_cover={str(k): _num_in(v, 0.0, 1.0) for k, v in dict(d.get("mean_cover") or {}).items()},
         )
         if rec.cls != IntervalClass.INVALID.value and not {"ti", "to"} <= rec.means.keys():
             raise ValueError("usable hour without temperature means")
@@ -126,6 +141,8 @@ class _Acc:
     counter_gap: bool = False
     counter_stale: bool = False
     counter_restart: bool = False
+    bracket: bool | None = None  # see HourRecord.counter_bracket
+    before: dict[str, float] = field(default_factory=dict)  # see HourRecord.deltas_before_kwh
 
 
 def _num_out(v: float) -> float | None:
@@ -189,7 +206,7 @@ class HourAccumulator:
         # Counter increments cover the interval since each counter's previous reading; they are
         # computed before the hour rolls over so the part of the interval that lies in the closing
         # hour (e.g. 23:55-00:00) is booked there, not to the next hour (or date).
-        incs, gap_dropped, stale, new_baseline = self._counter_increments(s)
+        incs, gap_dropped, stale, new_baseline, bracketed = self._counter_increments(s)
         # Completeness rule: a date's energy counts only if every mapped counter was observed
         # continuously from the date's start to its end. A counter starting a new baseline at this
         # sample (first reading, re-mapping, lost state) breaks the date it falls in, unless the sample
@@ -210,9 +227,17 @@ class HourAccumulator:
             self._acc = _Acc(start=local, key=key)
         a = self._acc
         a.counter_restart |= new_baseline and not at_midnight
+        # an interval reaching back past this hour's start (its crossing sample was stale or missed):
+        # the earlier share belongs to the previous hour
+        pre, incs = _split(incs, s.time, a.key)
+        for k, share in pre.items():
+            if share > 0:
+                a.before[k] = a.before.get(k, 0.0) + share
         _add(a, {k: inc for k, (inc, _) in incs.items()})
         a.counter_stale |= stale
         a.counter_gap |= gap_dropped
+        if a.bracket is None and bracketed is not None:
+            a.bracket = bracketed
         dt = 0.0
         if self._last_time is not None:
             dt = elapsed_s(self._last_time, s.time)
@@ -238,13 +263,15 @@ class HourAccumulator:
 
     def _counter_increments(
         self, s: ValidatedSnapshot
-    ) -> tuple[dict[str, tuple[float, datetime]], bool, bool, bool]:
+    ) -> tuple[dict[str, tuple[float, datetime]], bool, bool, bool, bool | None]:
         """Per counter: (increment, start of the interval it covers); whether an increment across a
         midnight gap was dropped; whether any counter could not be read (stale bridge or a mapped
         counter unavailable), so energy may still be outstanding; whether a counter started a new
-        baseline here (no previous reading)."""
+        baseline here (no previous reading); and, when every mapped counter was read live, whether each
+        continued its previous reading within MAX_GAP_S (None when not all counters were readable)."""
         incs: dict[str, tuple[float, datetime]] = {}
         dropped = new_baseline = False
+        bracketed: bool | None = None
         # Counters only from a live bridge: with a stale heartbeat HA still holds the last values, and
         # refreshing the baselines from them would hide the outage from the gap handling below.
         live = Role.HEARTBEAT not in s.issues
@@ -257,6 +284,7 @@ class HourAccumulator:
             prev = self._last_counter.get(k)
             seen = self.counter_time.get(k)
             gap = seen is None or not 0 <= elapsed_s(seen, s.time) <= MAX_GAP_S
+            bracketed = (bracketed is not False) and prev is not None and not gap
             # After a gap (HA restart, bridge outage) the increment cannot be placed in time. Within
             # one local day it is kept, so daily totals stay right; across midnight it is dropped and
             # the day is marked so it is not used for learning.
@@ -278,7 +306,9 @@ class HourAccumulator:
             self._last_counter[k] = v
             self.counter_time[k] = s.time
             incs[k] = (inc, seen if seen is not None else s.time)
-        return incs, dropped, stale, new_baseline
+        if stale or new_baseline:
+            bracketed = None if stale else False
+        return incs, dropped, stale, new_baseline, bracketed
 
     def to_dict(self) -> dict[str, Any]:
         """The in-progress hour, so a restart does not lose its samples and energy."""
@@ -301,6 +331,8 @@ class HourAccumulator:
                 "counter_gap": a.counter_gap,
                 "counter_stale": a.counter_stale,
                 "counter_restart": a.counter_restart,
+                "bracket": a.bracket,
+                "before": dict(a.before),
             }
         return {"acc": acc, "last_time": self._last_time.isoformat() if self._last_time else None}
 
@@ -344,6 +376,8 @@ class HourAccumulator:
                 counter_gap=bool(raw["counter_gap"]),
                 counter_stale=bool(raw["counter_stale"]),
                 counter_restart=bool(raw.get("counter_restart", False)),
+                bracket=None if raw.get("bracket") is None else bool(raw["bracket"]),
+                before={str(k): _num_in(v, 0.0) for k, v in dict(raw.get("before") or {}).items()},
             )
         lt = d.get("last_time")
         last_time = datetime.fromisoformat(str(lt)) if lt else None
@@ -389,6 +423,9 @@ class HourAccumulator:
             a.counter_gap,
             a.counter_stale,
             a.counter_restart,
+            a.bracket,
+            dict(a.before),
+            mean_cover={k: min(1.0, w / 3600.0) for k, w in a.weights.items()},
         )
 
 
@@ -432,14 +469,22 @@ class DayAggregator:
     def add(self, h: HourRecord) -> DayRecord | None:
         day = h.start.date().isoformat()
         out = None
+        if h.deltas_before_kwh and self._hours:
+            prev = self._hours[-1].deltas_kwh
+            for k, v in h.deltas_before_kwh.items():
+                prev[k] = prev.get(k, 0.0) + v
         # live hours carry the installation's named zone (needed for 23/25-hour day lengths)
         self._tz = h.start.tzinfo
         if self._day is not None and day != self._day:
-            # The closing date's total is only known to be complete if the counters were readable at the
-            # boundary: a stale bridge at the end of the old date or the start of the new one (or a gap
-            # reaching into this hour) means energy may still be outstanding.
+            # The closing date's total is complete if live readings of every counter bracket midnight
+            # within MAX_GAP_S: the interval across the boundary is then split by time. A short outage
+            # (MQTT blip, HA restart) elsewhere in the first hour does not matter; a gap reaching into
+            # this hour, or no complete live reading in it, means energy may still be outstanding.
             last = self._hours[-1] if self._hours else None
-            boundary_bad = h.counter_gap or h.counter_stale or (last is not None and last.counter_stale)
+            if h.counter_bracket is not None:
+                boundary_bad = h.counter_gap or not h.counter_bracket
+            else:  # no complete live reading in the hour, or state from before the bracket was recorded
+                boundary_bad = h.counter_gap or h.counter_stale or (last is not None and last.counter_stale)
             out = None if boundary_bad or self._first_partial else self._finish()
             self._first_partial = False
             self._hours = []

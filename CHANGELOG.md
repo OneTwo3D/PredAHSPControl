@@ -5,6 +5,65 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.6.6] - 2026-11-17
+
+### Fixed
+- **The model of how the Daikin answers a room setpoint did not match the unit** (review of Nov 2026 data):
+  - Thermostat band: heating starts at setpoint − 0.4 K and runs on to + 0.9 K (zone-valve switches
+    6-16 Nov); was − 1.0 / + 0.5 K, so the model missed the early-morning start.
+  - RT modulation: 0.65 K per K of room error (regression over 6,403 heating minutes); was 5 K/K, which
+    credited a raised setpoint with roughly double the heat and overstated cheap-window preheat.
+  - Weather curve: 30.6 − 0.58·To (was −23 → 47, 10 → 25 °C, ~1.5 K off at −5 °C).
+  - Actual leaving water runs 1.8 K above the unit's own LWT setpoint in steady space heating (compressor
+    at minimum speed); the forecast now adds this learned offset. The former offset absorbed the wrong
+    modulation and is discarded.
+  Replay 9-16 Nov: 3 h MAE 0.330 → 0.267 K (bias −0.13 → +0.03 K), 6 h 0.449 → 0.380 K.
+
+### Added
+- **Weather curve and RT gain learned online** from the unit's LWT setpoint (weighted least squares with
+  forgetting, ~a week of heating; used after ~a day of samples once the outdoor temperature has varied).
+- **Actual-LWT offset learned** from steady space heating (prior 1.8 K).
+
+## [0.6.5] - 2026-11-16
+
+### Fixed
+- **Room forecasts were too cold whenever the heat pump ran** (3 h bias −0.18 K, MAE 0.36 K). The radiator
+  constant K = 63.1 came from the 2025/26 offline fit on the bridge's flow × ΔT, whose return sensor reads
+  ~0.6 K high; refitted with the corrected heat (2-13 Nov 2026, 2,571 steady samples) it is 84.4, i.e. the
+  radiators emit about a third more than modelled. Default now 84.4 (replay 9-16 Nov: 3 h MAE 0.368 → 0.323 K,
+  bias −0.18 → −0.12 K; 6 h MAE 0.51 → 0.44 K).
+
+### Added
+- **K is learned online** from steady space heating (compressor running ≥ 20 min, no DHW, no defrost, flow
+  ≥ 5 L/min, MWT − Ti ≥ 3 K): median of the last 600 samples (~50 h), used after 72 samples (~6 h), saved
+  with the learned state. Uses the mapped heat output, which must be the corrected one. Shown as
+  `radiator_k` / `radiator_samples` on *Required flow temperature*. Replay 9-16 Nov: learns ~77, 3 h MAE 0.330 K.
+
+## [0.6.4] - 2026-11-16
+
+### Fixed
+- **A calm night could cost a training day.** The outdoor temperature counted as stale after 3 h without
+  a change, but the Daikin sensor reports in 0.5 K steps and the bridge publishes on change only: on
+  11 Nov 2026 it stayed unchanged 03:40-07:10, every snapshot was incomplete and the day was lost. While
+  the bridge heartbeat is live the limit is now 12 h (`TO_MAX_AGE_LIVE_BRIDGE_S`); without a live
+  heartbeat it stays 3 h.
+
+## [0.6.3] - 2026-11-16
+
+### Fixed
+- **A short outage could cost a training day.** A date was rejected whenever the counters were unreadable
+  at any moment in the next date's first hour: on 15 Nov 2026 a 3-minute MQTT/network blip at 00:51 (one
+  5-minute sample) discarded the complete 14 Nov. The rule is now precise: a date is complete when live
+  readings of every counter bracket midnight within 20 minutes (`MAX_GAP_S`); outages elsewhere in the
+  first hour, and short HA restarts, no longer matter. A longer outage across midnight still drops it.
+- **Energy of an interval reaching back past an hour's start** (its crossing sample stale or missed, e.g.
+  after an HA restart) was booked entirely to the later hour; the earlier share now goes to the previous
+  hour, so a date keeps its share of an interval spanning midnight.
+
+### Changed
+- Hour records carry `counter_bracket` and `deltas_before_kwh` (saved state from 0.6.2 loads unchanged;
+  its hours keep the old boundary rule).
+
 ## [0.6.2] - 2026-10-18
 
 ### Fixed

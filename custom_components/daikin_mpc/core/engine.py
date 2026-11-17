@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -32,12 +32,15 @@ from .gains import (
     pv_at,
 )
 from .heatpump_model import CopCurve
+from .intervals import IntervalClass
 from .learner import BuildingLearner, LearnerConfig
 from .optimiser import OptimiserConfig, PlanInputs, Recommendation, recommend
 from .predictor import Forecast, PlantParams, forecast
+from .radiator_learner import RadiatorLearner
 from .telemetry import Role, ValidatedSnapshot
 from .thermal_model import ThermalParams
 from .timeutil import add_hours, elapsed_h, elapsed_s, hour_key
+from .wc_learner import WeatherCurveLearner
 
 ENGINE_STATE_VERSION = 1
 HORIZONS_H = (1, 3, 6)
@@ -55,7 +58,9 @@ class EngineConfig:
     # 3.0 ± 0.8 but identifies C poorly. Refined online by the capacity learner.
     c_wh_per_k: float = 5500.0
     prior_sd: tuple[float, float, float] = (10.0, 80.0, 1500.0)
-    radiator_k: float = 63.1
+    # refitted Nov 2026 from steady space heating with the corrected heat (return sensor ~0.6 K high); the
+    # winter 2025/26 fit (63.1) used the uncorrected flow x dT and was about a third low. Refined online.
+    radiator_k: float = 84.4
     radiator_n: float = 1.3
     q_min_w: float = 680.0
     q_max_w: float = 4300.0
@@ -65,8 +70,13 @@ class EngineConfig:
     cop_centres_c: tuple[float, ...] = (1.4, 4.7, 7.6, 10.3, 13.1)
     cop_values: tuple[float, ...] = (3.06, 3.45, 3.68, 3.99, 4.82)
     # native weather-dependent curve: (outdoor °C, LWT °C) points, linear between, clamped outside
-    wc_curve: tuple[tuple[float, float], ...] = ((-23.0, 47.0), (10.0, 25.0))
+    # the unit's measured curve (Nov 2026 regression: 30.6 − 0.58·To); refined online by WeatherCurveLearner.
+    # The former default (−23 → 47, 10 → 25) was steeper than the unit and grew ~1.5 K off at −5 °C.
+    wc_curve: tuple[tuple[float, float], ...] = ((-23.0, 43.94), (10.0, 24.8))
     min_lwt_c: float = 25.0
+    # actual LWT above the unit's own LWT setpoint during steady space heating (10-16 Nov 2026: +1.8 K,
+    # compressor at its minimum speed overshoots); prior for the learned offset
+    lwt_actual_offset_k: float = 1.8
     standby_w: float = 19.0  # external meter, compressor off (winter 2025/26)
     learning_enabled: bool = True
     gains: GainsConfig = field(default_factory=GainsConfig)
@@ -129,6 +139,9 @@ class EngineStatus:
     # inputs of lwt_required_c: heat the emitters must deliver, and the measured gains taken off
     lwt_required_heat_w: float | None = None
     lwt_required_gains_w: float | None = None
+    # radiator constant in use (learned from steady space heating once enough samples exist) and samples
+    radiator_k: float | None = None
+    radiator_samples: int = 0
 
 
 def required_lwt(
@@ -174,6 +187,19 @@ class ShadowEngine:
         self.plant = PlantParams(
             RadiatorParams(c.radiator_k, c.radiator_n), c.q_min_w, c.q_max_w, min_lwt_c=c.min_lwt_c
         )
+        self.radiator_learner = RadiatorLearner(n=c.radiator_n)
+        # heat counter vs mapped heat power over space-heating hours (kWh): the counter is unbiased, the
+        # power sensor may not be (the default bridge flow x dT reads ~1/3 low); K is learned from the
+        # power scaled by their ratio, and only once it is established
+        self._heat_counter_kwh = 0.0
+        self._heat_power_kwh = 0.0
+        self._last_reconciled_start: datetime | None = None  # start of the last hour counted
+        (x0, y0), (x1, y1) = c.wc_curve[0], c.wc_curve[-1]
+        slope0 = (y1 - y0) / (x1 - x0) if x1 != x0 else 0.0
+        self.wc_learner = WeatherCurveLearner(
+            prior=(y0 - slope0 * x0, slope0, self.plant.rt_modulation_gain_k_per_k)
+        )
+        self._space_heating_since: datetime | None = None
         self.cop_prior = CopCurve(tuple(c.cop_centres_c), tuple(c.cop_values), (), ())
         self.cop_learner = CopLearner(self.cop_prior)
         self.cop_curve = self.cop_prior
@@ -185,7 +211,10 @@ class ShadowEngine:
         self.errors: dict[str, ErrorStats] = {}
         self.pending: list[_Pending] = []
         self.setpoint_profile: dict[int, float] = {}  # hour of day -> learned room setpoint
-        self.lwt_offset_k = 0.0  # observed requested LWT minus WC curve (RT modulation, deviation)
+        # actual LWT minus the unit's LWT setpoint in steady space heating (learned; the radiators see the
+        # actual water). Pre-0.6.6 this held "setpoint minus curve" and absorbed a wrong RT modulation.
+        self.lwt_offset_k = self.cfg.lwt_actual_offset_k
+        self._apply_lwt_offset()
         self.last_hour: HourRecord | None = None
         self.last_day: DayRecord | None = None
         self.last_forecast: Forecast | None = None
@@ -203,6 +232,8 @@ class ShadowEngine:
         )
 
     def _on_hour(self, h: HourRecord) -> None:
+        if self.cfg.learning_enabled:
+            self._reconcile_heat(h)
         """Feed consecutive hours to the free-cooling capacity learner; C follows its estimate."""
         self._recent_hours = [*self._recent_hours, h][-3:]
         if not self.cfg.learning_enabled or len(self._recent_hours) < 3:
@@ -216,10 +247,29 @@ class ShadowEngine:
     def cop(self, to_c: float) -> float:
         return self.cop_curve.at(to_c)[0]
 
-    def wc_lwt(self, to_c: float) -> float:
-        xs = [p[0] for p in self.cfg.wc_curve]
-        ys = [p[1] for p in self.cfg.wc_curve]
-        return max(float(np.interp(to_c, xs, ys)), self.cfg.min_lwt_c)
+    def wc_lwt(self, to_c: float, clamp: bool = True) -> float:
+        """The unit's weather-curve LWT (without RT modulation): learned once identified, else the config.
+
+        ``clamp=False`` gives the curve below the unit's minimum LWT: the plant model clamps the setpoint
+        once, after RT modulation, as the unit does.
+        """
+        est = self.wc_learner.estimate()
+        if est is not None:
+            a, b, _ = est
+            v = a + b * to_c
+        else:
+            xs = [p[0] for p in self.cfg.wc_curve]
+            ys = [p[1] for p in self.cfg.wc_curve]
+            v = float(np.interp(to_c, xs, ys, left=None, right=None))
+            # beyond the configured points the line continues (the clamp below/at the plant bounds it)
+            if to_c > xs[-1]:
+                v = ys[-1] + (ys[-1] - ys[0]) / (xs[-1] - xs[0]) * (to_c - xs[-1])
+        return max(v, self.cfg.min_lwt_c) if clamp else v
+
+    def _apply_wc(self) -> None:
+        est = self.wc_learner.estimate()
+        if est is not None and est[2] != self.plant.rt_modulation_gain_k_per_k:
+            self.plant = replace(self.plant, rt_modulation_gain_k_per_k=est[2])
 
     def _record_external(self, name: str, issue: datetime, horizon_h: float, value: float) -> None:
         self.pending.append(_Pending(name, add_hours(issue, horizon_h), value))
@@ -277,24 +327,27 @@ class ShadowEngine:
             prev = self.setpoint_profile.get(hod)
             self.setpoint_profile[hod] = sp if prev is None else 0.8 * prev + 0.2 * sp
         lwt_set = s.get(Role.LWT_SET)
+        # space heating only (DHW and defrost request very different LWTs): the unit's own setpoint
+        # teaches the curve and the RT modulation together (replaces the former offset EMA, which
+        # subtracted a wrong modelled modulation and absorbed the error). A setpoint at the unit's
+        # minimum LWT is censored (the curve asks for less) and would flatten the fit: skipped.
         if (
-            s.complete
+            self.cfg.learning_enabled
+            and s.complete
             and lwt_set is not None
+            and lwt_set > self.cfg.min_lwt_c + 0.25
             and to is not None
+            and ti is not None
+            and sp is not None
             and hz is not None
             and hz > 0
-            and not s.get(Role.DHW_ACTIVE)
-            and not s.get(Role.DEFROST)
+            and self._space_heating_known(s)
+            and self.wc_learner.add(to, sp - ti, lwt_set)
         ):
-            # space heating only: DHW and defrost request very different LWTs
-            # remove the modelled RT modulation so the offset captures curve shift / deviation only
-            mod = 0.0
-            if ti is not None and sp is not None:
-                mod = max(
-                    -self.plant.rt_modulation_max_k,
-                    min(self.plant.rt_modulation_max_k, self.plant.rt_modulation_gain_k_per_k * (sp - ti)),
-                )
-            self.lwt_offset_k = 0.95 * self.lwt_offset_k + 0.05 * (lwt_set - mod - self.wc_lwt(to))
+            self._apply_wc()
+
+        # 2b. radiator constant from steady space heating (the water's heat is what the radiators emit)
+        self._learn_radiator(s, t, ti, hz)
 
         # 3. score matured predictions
         if ti is not None:
@@ -313,7 +366,7 @@ class ShadowEngine:
         if s.complete and ti is not None and to is not None:
             to_steps, source = self._to_steps(t, to, to_forecast)
             sps = [self._setpoint_at(add_hours(t, STEP_H * i), sp) for i in range(len(to_steps))]
-            lwts = [self.wc_lwt(x) + self.lwt_offset_k for x in to_steps]
+            lwts = [self.wc_lwt(x, clamp=False) for x in to_steps]
             fc = forecast(
                 ti,
                 self._calling(s, hz),
@@ -385,7 +438,98 @@ class ShadowEngine:
             capacity_nights=self.capacity.nights,
             capacity_pairs=round(self.capacity.n, 1),
             tau_h=round(self.capacity_estimate.tau_h, 1) if self.capacity_estimate is not None else None,
+            radiator_k=self.plant.radiator.k_w_per_kn,
+            radiator_samples=len(self.radiator_learner.samples),
         )
+
+    def _learn_radiator(self, s: ValidatedSnapshot, t: datetime, ti: float | None, hz: float | None) -> None:
+        """Add a sample once space heating has run steadily for a while; apply the median to the plant."""
+        steady = s.complete and hz is not None and hz > 0 and self._space_heating_known(s)
+        if not steady:
+            self._space_heating_since = None
+            return
+        since = self._space_heating_since
+        if since is None or elapsed_s(since, t) < 0:
+            self._space_heating_since = since = t
+        rl = self.radiator_learner
+        if not self.cfg.learning_enabled or elapsed_s(since, t) < rl.min_run_s:
+            return
+        q, lwt, rwt, flow = s.get(Role.HEAT_W), s.get(Role.LWT), s.get(Role.RWT), s.get(Role.FLOW)
+        lwt_set = s.get(Role.LWT_SET)
+        if lwt is not None and lwt_set is not None and abs(lwt - lwt_set) <= 10:
+            # actual water above the unit's setpoint (minimum compressor output overshoots)
+            self.lwt_offset_k = 0.98 * self.lwt_offset_k + 0.02 * (lwt - lwt_set)
+            self._apply_lwt_offset()
+        if q is None or lwt is None or rwt is None or flow is None or ti is None or flow < rl.min_flow_l_min:
+            return
+        ratio = self.heat_ratio()
+        if ratio is None:
+            return  # power sensor not yet reconciled with the heat counter
+        if rl.add(q * ratio, (lwt + rwt) / 2, ti):
+            self._apply_radiator()
+
+    @staticmethod
+    def _space_heating_known(s: ValidatedSnapshot) -> bool:
+        """For calibration only: DHW explicitly off (the optional signal must be present and valid, an
+        unknown state could be a hot-water run) and no defrost (if mapped, its reading must be valid)."""
+        return s.get(Role.DHW_ACTIVE) == 0.0 and Role.DEFROST not in s.issues and not s.get(Role.DEFROST)
+
+    def _apply_lwt_offset(self) -> None:
+        """The plant adds the learned actual-water offset after the unit's minimum-LWT clamp."""
+        if self.plant.lwt_actual_offset_k != self.lwt_offset_k:
+            self.plant = replace(self.plant, lwt_actual_offset_k=self.lwt_offset_k)
+
+    HEAT_RECONCILE_MIN_KWH = 20.0
+
+    def heat_ratio(self) -> float | None:
+        """Heat counter / integrated heat power over space-heating hours, once 20 kWh are compared."""
+        if self._heat_counter_kwh < self.HEAT_RECONCILE_MIN_KWH or self._heat_power_kwh <= 0:
+            return None
+        r = self._heat_counter_kwh / self._heat_power_kwh
+        return r if 0.5 <= r <= 2.0 else None
+
+    def _reconcile_heat(self, h: HourRecord) -> None:
+        """Accumulate one finished hour of continuous space heating only: classified heating_full, well
+        covered, no DHW/defrost flag and no DHW or backup-heater counter activity (a missing or late DHW
+        flag must not let DHW heat power into the comparison)."""
+        # counter energy of the previous (counted) hour that arrived late, with this hour's first reading
+        late = h.deltas_before_kwh.get(Role.HEAT_KWH.value, 0.0)
+        prev, self._last_reconciled_start = self._last_reconciled_start, None
+        # valid only if the counter readings bracket the boundary within MAX_GAP without reset or gap (a
+        # brief stale sample elsewhere in the new hour does not matter)
+        broken = h.counter_restart or h.counter_gap or h.counter_bracket is not True
+        if late > 0 and not broken and prev is not None and elapsed_s(prev, h.start) == 3600:
+            self._heat_counter_kwh += late
+        if (
+            h.cls != IntervalClass.HEATING_FULL.value
+            or h.dhw
+            or h.defrost
+            or h.coverage < 0.85
+            or h.counter_gap
+            or h.counter_restart
+            or h.counter_stale
+            or h.deltas_kwh.get(Role.DHW_HEAT_KWH.value, 0.0) > 0
+            or h.deltas_kwh.get(Role.BUH_KWH.value, 0.0) > 0
+            # the counter delta covers the whole hour: the heat-power mean must cover (nearly) all of it
+            or h.mean_cover.get(Role.HEAT_W.value, 0.0) < 0.85
+        ):
+            return
+        dq, pw = h.deltas_kwh.get(Role.HEAT_KWH.value), h.means.get(Role.HEAT_W.value)
+        # zero-step hours count too: a whole-kWh counter steps only in some hours, and keeping only those
+        # would inflate the ratio (the quantization averages out over the 20+ kWh compared)
+        if dq is None or pw is None or dq < 0 or pw <= 0:
+            return
+        self._heat_counter_kwh += dq
+        self._heat_power_kwh += pw / 1000.0
+        self._last_reconciled_start = h.start
+        if self._heat_counter_kwh > 400.0:  # slow forgetting: keep roughly the last few weeks
+            self._heat_counter_kwh /= 2
+            self._heat_power_kwh /= 2
+
+    def _apply_radiator(self) -> None:
+        k = self.radiator_learner.estimate()
+        if k is not None and k != self.plant.radiator.k_w_per_kn:
+            self.plant = replace(self.plant, radiator=RadiatorParams(k, self.cfg.radiator_n))
 
     @property
     def standby_w(self) -> float:
@@ -494,7 +638,7 @@ class ShadowEngine:
             current_setpoint_c=sp_now if sp_now is not None else baseline[0],
             heating_enabled=bool(enabled if enabled is not None else True),
             to_c=to_steps,
-            lwt_set_c=[self.wc_lwt(x) + self.lwt_offset_k for x in to_steps],
+            lwt_set_c=[self.wc_lwt(x, clamp=False) for x in to_steps],
             rate_p=[cost.marginal_rate(add_hours(t, STEP_H * (i + 0.5))) for i in range(len(to_steps))],
             baseline_setpoint_c=baseline,
             target_c=comfort_targets(t, len(to_steps), STEP_H, comfort_periods),
@@ -545,7 +689,7 @@ class ShadowEngine:
             "class_counts": dict(self.class_counts),
             "errors": {k: [v.n, v.abs_sum, v.sum] for k, v in self.errors.items()},
             "setpoint_profile": {str(k): v for k, v in self.setpoint_profile.items()},
-            "lwt_offset_k": self.lwt_offset_k,
+            "lwt_actual_offset_k": self.lwt_offset_k,
             "pending_day": self.pending_day.to_dict() if self.pending_day else None,
             "last_counters": dict(self.hours._last_counter),
             "counter_time": {k: v.isoformat() for k, v in self.hours.counter_time.items()},
@@ -558,6 +702,9 @@ class ShadowEngine:
             "gains": self.gains_fc.to_dict(),
             "gains_basis": self._gains_basis,
             "basis_changed_day": self._basis_changed_day,
+            "radiator": self.radiator_learner.to_dict(),
+            "heat_reconcile_kwh": [self._heat_counter_kwh, self._heat_power_kwh],
+            "wc_learner": self.wc_learner.to_dict(),
         }
 
     def load_dict(self, d: dict[str, Any]) -> list[str]:
@@ -606,6 +753,31 @@ class ShadowEngine:
                 fn()
             except Exception as e:
                 warn.append(f"{name} ignored: {e!r}")
+        if "wc_learner" in d:
+            try:
+                wc_ok = self.wc_learner.load_dict(dict(d["wc_learner"]))
+            except Exception:
+                wc_ok = False
+            if wc_ok:
+                self._apply_wc()
+            else:
+                warn.append("weather-curve learner state invalid; using the configured curve")
+        try:
+            num, den = (float(v) for v in d.get("heat_reconcile_kwh") or (0.0, 0.0))
+            if math.isfinite(num) and math.isfinite(den) and num >= 0 and den >= 0:
+                self._heat_counter_kwh, self._heat_power_kwh = num, den
+        except (TypeError, ValueError):
+            warn.append("heat reconciliation state invalid; starting again")
+        if "radiator" in d:
+            try:
+                rad_ok = self.radiator_learner.load_dict(dict(d["radiator"]))
+            except Exception:
+                rad_ok = False
+            if rad_ok:
+                self._apply_radiator()
+            else:
+                self.radiator_learner = RadiatorLearner(n=self.cfg.radiator_n)
+                warn.append("radiator learner state invalid; using the configured constant")
         if "cop_learner" in d:
             try:
                 ok = self.cop_learner.load_dict(d["cop_learner"])
@@ -643,9 +815,11 @@ class ShadowEngine:
 
     def _load_profile(self, d: dict[str, Any]) -> None:
         prof = {int(k): float(v) for k, v in dict(d.get("setpoint_profile") or {}).items()}
-        off = float(d.get("lwt_offset_k", 0.0))
         self.setpoint_profile = {k: v for k, v in prof.items() if 0 <= k < 24 and 5 <= v <= 35}
-        self.lwt_offset_k = off if math.isfinite(off) and abs(off) <= 15 else 0.0
+        # "lwt_offset_k" (≤ 0.6.5) absorbed a wrong modelled RT modulation and is ignored
+        off = float(d.get("lwt_actual_offset_k", self.cfg.lwt_actual_offset_k))
+        self.lwt_offset_k = off if math.isfinite(off) and abs(off) <= 10 else self.cfg.lwt_actual_offset_k
+        self._apply_lwt_offset()
 
     def _load_pending_day(self, d: dict[str, Any]) -> None:
         pdict = d.get("pending_day")
@@ -708,6 +882,25 @@ class ShadowEngine:
         if acc is None and days._hours:
             raise ValueError("saved date without its in-progress hour")
         self.hours, self.days = hours, days
+
+
+CALIBRATION_SECTIONS = ("heat_reconcile_kwh", "radiator")
+WC_SECTIONS = ("wc_learner", "lwt_actual_offset_k")
+
+
+def forget_recalibrated(
+    stored: dict[str, Any], sources: dict[str, str], wc_sources: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Drop learned calibrations whose input entities changed (or are unknown, i.e. state saved before
+    they were recorded): the heat ratio and radiator samples follow ``sources`` (heat power, heat counter,
+    water and room temperatures, flow); the weather curve and actual-LWT offset follow ``wc_sources``."""
+    if stored.get("calibration_sources") != sources:
+        for key in CALIBRATION_SECTIONS:
+            stored.pop(key, None)
+    if wc_sources is not None and stored.get("wc_sources") != wc_sources:
+        for key in WC_SECTIONS:
+            stored.pop(key, None)
+    return stored
 
 
 def _zone(d: dict[str, Any]) -> tzinfo | None:

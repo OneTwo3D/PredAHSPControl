@@ -17,7 +17,10 @@ from custom_components.daikin_mpc.core.predictor import PlantParams
 from custom_components.daikin_mpc.core.thermal_model import ThermalParams
 
 B = ThermalParams(94.0, 3000.0, 440.0)
-P = PlantParams(RadiatorParams(63.1, 1.3))
+# mechanism tests: a synthetic plant with strong RT modulation (the pre-0.6.6 defaults), not this house
+P = PlantParams(
+    RadiatorParams(63.1, 1.3), rt_modulation_gain_k_per_k=5.0, hysteresis_on_k=1.0, hysteresis_off_k=0.5
+)
 COP = lambda t: float(np.interp(t, [1.4, 4.7, 7.6, 10.2, 12.9], [2.93, 3.25, 3.38, 3.52, 3.53]))  # noqa: E731
 T0 = datetime(2026, 1, 15, 18, 0, tzinfo=UTC)
 N = 96

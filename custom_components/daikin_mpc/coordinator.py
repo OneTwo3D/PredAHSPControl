@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -55,7 +56,7 @@ from .core.cost_model import (
     parse_rate_series,
     parse_tariff,
 )
-from .core.engine import EngineConfig, EngineStatus, ShadowEngine
+from .core.engine import EngineConfig, EngineStatus, ShadowEngine, forget_recalibrated
 from .core.gains import GainsConfig, parse_solcast
 from .core.optimiser import OptimiserConfig, Recommendation
 from .core.telemetry import BINARY_ROLES, COUNTER_ROLES, Reading, Role, Snapshot, validate
@@ -113,13 +114,38 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         stored = await self._store.async_load()
         if stored:
             stored = self._drop_remapped_counters(dict(stored))
+            stored = forget_recalibrated(stored, self._calibration_sources(), self._wc_sources())
             self.load_warnings = self.engine.load_dict(stored)
             for w in self.load_warnings:
                 _LOGGER.warning("Daikin MPC state: %s", w)
 
     def _state(self) -> dict[str, Any]:
-        """Engine state plus the entity behind each counter, to detect remapping on the next load."""
-        return {**self.engine.to_dict(), "counter_entities": self._counter_entities()}
+        """Engine state plus the entities behind each counter and the heat calibration, to detect
+        remapping on the next load."""
+        return {
+            **self.engine.to_dict(),
+            "counter_entities": self._counter_entities(),
+            "calibration_sources": self._calibration_sources(),
+            "wc_sources": self._wc_sources(),
+        }
+
+    def _to_on_bridge(self) -> bool:
+        """Whether the outdoor temperature entity is on the heartbeat's device (the bridge)."""
+        reg = er.async_get(self.hass)
+        to = reg.async_get(self.mapping.get(Role.TO.value) or "")
+        hb = reg.async_get(self.mapping.get(Role.HEARTBEAT.value) or "")
+        return bool(to and hb and to.device_id and to.device_id == hb.device_id)
+
+    def _wc_sources(self) -> dict[str, str]:
+        """Entities the weather curve, RT gain and actual-LWT offset are learned from."""
+        roles = (Role.TO, Role.TI, Role.ROOM_SET, Role.LWT_SET, Role.LWT)
+        return {r.value: str(self.mapping.get(r.value) or "") for r in roles}
+
+    def _calibration_sources(self) -> dict[str, str]:
+        """Entities the heat ratio and radiator constant are learned from (heat, water and room
+        temperatures, flow)."""
+        roles = (Role.HEAT_W, Role.HEAT_KWH, Role.LWT, Role.RWT, Role.TI, Role.FLOW)
+        return {r.value: str(self.mapping.get(r.value) or "") for r in roles}
 
     def _counter_entities(self) -> dict[str, str]:
         return {r.value: self.mapping[r.value] for r in COUNTER_ROLES if self.mapping.get(r.value)}
@@ -232,7 +258,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
     async def _async_update_data(self) -> EngineStatus:
         now = dt_util.now()
         await self._async_weather(now)
-        snap = validate(self._snapshot(now))
+        snap = validate(self._snapshot(now), to_on_bridge=self._to_on_bridge())
         try:
             status = self.engine.process(snap, self._weather, self._external(), self._solcast())
         except Exception as err:  # never let a model error take HA down; surface it instead
