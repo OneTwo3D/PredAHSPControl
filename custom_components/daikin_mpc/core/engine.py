@@ -495,7 +495,9 @@ class ShadowEngine:
         # counter energy of the previous (counted) hour that arrived late, with this hour's first reading
         late = h.deltas_before_kwh.get(Role.HEAT_KWH.value, 0.0)
         prev, self._last_reconciled_start = self._last_reconciled_start, None
-        broken = h.counter_restart or h.counter_gap or h.counter_stale  # reset/gap: energy unknown
+        # valid only if the counter readings bracket the boundary within MAX_GAP without reset or gap (a
+        # brief stale sample elsewhere in the new hour does not matter)
+        broken = h.counter_restart or h.counter_gap or h.counter_bracket is not True
         if late > 0 and not broken and prev is not None and elapsed_s(prev, h.start) == 3600:
             self._heat_counter_kwh += late
         if (

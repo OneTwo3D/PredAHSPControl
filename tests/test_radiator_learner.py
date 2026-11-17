@@ -276,6 +276,7 @@ def test_late_counter_share_is_added_to_the_reconciled_hour():
         )
         h.mean_cover = {"heat_w": 1.0}
         h.deltas_before_kwh = before or {}
+        h.counter_bracket = True  # a late share comes from a reading bracketing the boundary
         return h
 
     eng._on_hour(hour(0, 0.8))  # its last 0.2 kWh arrives late, with the next hour
@@ -354,3 +355,38 @@ def test_late_share_from_a_counter_reset_hour_is_not_booked():
     eng._on_hour(hour(0, 1.0))
     eng._on_hour(hour(1, 0.0, before={"heat_kwh": 500.0}, restart=True))  # meter reset
     assert eng._heat_counter_kwh == pytest.approx(1.0)
+
+
+def test_late_share_after_a_brief_stale_reading_is_booked_when_bracketed():
+    """Codex review PR #1 round 10: a stale first sample followed within 20 min by a live reading
+    brackets the boundary; its late share is valid and must reach the reconciliation."""
+    from custom_components.daikin_mpc.core.accumulator import HourRecord
+
+    eng = ShadowEngine(EngineConfig())
+
+    def hour(i, dq, before=None, stale=False, bracket=True):
+        h = HourRecord(
+            T0 + timedelta(hours=i),
+            1.0,
+            {"ti": 20.5, "to": 5.0, "heat_w": 1000.0},
+            30,
+            40,
+            12,
+            {"heat_kwh": dq},
+            False,
+            False,
+            "heating_full",
+        )
+        h.mean_cover = {"heat_w": 1.0}
+        h.deltas_before_kwh = before or {}
+        h.counter_stale = stale
+        h.counter_bracket = bracket
+        return h
+
+    eng._on_hour(hour(0, 0.8))
+    eng._on_hour(hour(1, 0.8, before={"heat_kwh": 0.2}, stale=True, bracket=True))
+    assert eng._heat_counter_kwh == pytest.approx(1.0)  # late share booked; hour 1 itself (stale) not
+    eng2 = ShadowEngine(EngineConfig())
+    eng2._on_hour(hour(0, 0.8))
+    eng2._on_hour(hour(1, 0.8, before={"heat_kwh": 0.2}, stale=True, bracket=None))  # not bracketed
+    assert eng2._heat_counter_kwh == pytest.approx(0.8)
