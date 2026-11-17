@@ -341,8 +341,7 @@ class ShadowEngine:
             and sp is not None
             and hz is not None
             and hz > 0
-            and not s.get(Role.DHW_ACTIVE)
-            and not s.get(Role.DEFROST)
+            and self._space_heating_known(s)
             and self.wc_learner.add(to, sp - ti, lwt_set)
         ):
             self._apply_wc()
@@ -445,13 +444,7 @@ class ShadowEngine:
 
     def _learn_radiator(self, s: ValidatedSnapshot, t: datetime, ti: float | None, hz: float | None) -> None:
         """Add a sample once space heating has run steadily for a while; apply the median to the plant."""
-        steady = (
-            s.complete
-            and hz is not None
-            and hz > 0
-            and not s.get(Role.DHW_ACTIVE)
-            and not s.get(Role.DEFROST)
-        )
+        steady = s.complete and hz is not None and hz > 0 and self._space_heating_known(s)
         if not steady:
             self._space_heating_since = None
             return
@@ -474,6 +467,12 @@ class ShadowEngine:
             return  # power sensor not yet reconciled with the heat counter
         if rl.add(q * ratio, (lwt + rwt) / 2, ti):
             self._apply_radiator()
+
+    @staticmethod
+    def _space_heating_known(s: ValidatedSnapshot) -> bool:
+        """For calibration only: DHW explicitly off (the optional signal must be present and valid, an
+        unknown state could be a hot-water run) and no defrost (if mapped, its reading must be valid)."""
+        return s.get(Role.DHW_ACTIVE) == 0.0 and Role.DEFROST not in s.issues and not s.get(Role.DEFROST)
 
     def _apply_lwt_offset(self) -> None:
         """The plant adds the learned actual-water offset after the unit's minimum-LWT clamp."""

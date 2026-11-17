@@ -136,6 +136,7 @@ def test_biased_heat_sensor_is_reconciled_with_the_heat_counter():
             heat_w=q_true * 0.66,
             heat_kwh=float(int(heat)),
             heartbeat=1.0,
+            dhw_active=0.0,
         )
         eng.process(biased, None, {}, None)
         t += timedelta(minutes=5)
@@ -299,3 +300,27 @@ def test_weather_curve_is_forgotten_when_its_inputs_change():
     assert "wc_learner" in kept and "radiator" in kept
     moved = forget_recalibrated(dict(state), srcs, {**wc_old, "to": "sensor.ecowitt_outdoor_temperature"})
     assert "wc_learner" not in moved and "radiator" in moved
+
+
+def test_unknown_dhw_state_blocks_calibration_learning():
+    """Codex review PR #1 round 8: DHW_ACTIVE is optional; a missing/unavailable reading during a hot-water
+    run must not let DHW data into the weather curve, actual-LWT offset or radiator samples."""
+    from custom_components.daikin_mpc.core.telemetry import Reading, Snapshot, validate
+
+    eng = ShadowEngine(EngineConfig())
+    offset0 = eng.lwt_offset_k
+    t = T0
+    for _ in range(12 * 30):
+        s = _heating(t, heat_kwh=float(int(_COUNTER["kwh"])))
+        readings = {r: Reading(v) for r, v in s.values.items()}
+        readings[Role.LWT_SET] = Reading(50.0)  # a hot-water setpoint
+        readings[Role.LWT] = Reading(52.0)
+        readings[Role.DHW_ACTIVE] = Reading(None)  # signal unavailable
+        readings[Role.HEARTBEAT] = Reading(1.0)  # bridge alive: the snapshot is complete
+        snap_ = validate(Snapshot(t, readings))
+        assert snap_.complete
+        eng.process(snap_, None, {}, None)
+        t += timedelta(minutes=5)
+    assert eng.wc_learner.n == 0
+    assert eng.lwt_offset_k == offset0
+    assert eng.radiator_learner.samples == []

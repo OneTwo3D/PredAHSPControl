@@ -68,7 +68,7 @@ def test_learner_round_trip():
 
 
 def _heating(t, to, sp, ti, lwt_set):
-    return snap(t, to=to, ti=ti, room_set=sp, lwt_set=lwt_set, hz=40.0, heartbeat=1.0)
+    return snap(t, to=to, ti=ti, room_set=sp, lwt_set=lwt_set, hz=40.0, heartbeat=1.0, dhw_active=0.0)
 
 
 def test_engine_learns_curve_and_applies_gain_to_plant():
@@ -107,7 +107,7 @@ def test_actual_lwt_offset_default_and_learning():
     assert eng.lwt_offset_k == pytest.approx(1.8)
     t = T0
     for _ in range(12 * 12):  # 12 h of steady heating, actual 3 K above setpoint
-        eng.process(snap(t, hz=10.0, lwt_set=27.0, lwt=30.0, heartbeat=1.0), None, {}, None)
+        eng.process(snap(t, hz=10.0, lwt_set=27.0, lwt=30.0, heartbeat=1.0, dhw_active=0.0), None, {}, None)
         t += timedelta(minutes=5)
     assert eng.lwt_offset_k == pytest.approx(3.0, abs=0.1)
     state = json.loads(json.dumps(eng.to_dict()))
