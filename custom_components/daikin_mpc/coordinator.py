@@ -134,8 +134,10 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         return {r.value: str(self.mapping.get(r.value) or "") for r in roles}
 
     def _calibration_sources(self) -> dict[str, str]:
-        """Entities the heat ratio and radiator constant are learned from."""
-        return {r.value: str(self.mapping.get(r.value) or "") for r in (Role.HEAT_W, Role.HEAT_KWH)}
+        """Entities the heat ratio and radiator constant are learned from (heat, water and room
+        temperatures, flow)."""
+        roles = (Role.HEAT_W, Role.HEAT_KWH, Role.LWT, Role.RWT, Role.TI, Role.FLOW)
+        return {r.value: str(self.mapping.get(r.value) or "") for r in roles}
 
     def _counter_entities(self) -> dict[str, str]:
         return {r.value: self.mapping[r.value] for r in COUNTER_ROLES if self.mapping.get(r.value)}

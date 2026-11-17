@@ -156,3 +156,29 @@ async def test_plan_times_keep_their_origin_and_diagnostics(hass: HomeAssistant,
     assert diag["engine_state"]["version"] == 1 and "learner" in diag["engine_state"]
     assert diag["status"] is not None and diag["status"]["telemetry_ok"] is True
     json_dumps(diag)  # must be serialisable for the download
+
+
+def test_calibration_fingerprint_covers_every_radiator_input():
+    """Codex review PR #1 round 7: remapping LWT, RWT, room temperature or flow resets the radiator samples."""
+    from custom_components.daikin_mpc.coordinator import DaikinMpcCoordinator
+    from custom_components.daikin_mpc.core.engine import forget_recalibrated
+
+    class _Fake:
+        _calibration_sources = DaikinMpcCoordinator._calibration_sources
+
+        def __init__(self, mapping):
+            self.mapping = mapping
+
+    base = {
+        "heat_w": "sensor.h",
+        "heat_kwh": "sensor.c",
+        "lwt": "sensor.l",
+        "rwt": "sensor.r",
+        "ti": "sensor.t",
+        "flow": "sensor.f",
+    }
+    old = _Fake(base)._calibration_sources()
+    for role in ("lwt", "rwt", "ti", "flow"):
+        new = _Fake({**base, role: "sensor.other"})._calibration_sources()
+        stored = {"radiator": {}, "heat_reconcile_kwh": [1, 1], "calibration_sources": old}
+        assert "radiator" not in forget_recalibrated(stored, new), role

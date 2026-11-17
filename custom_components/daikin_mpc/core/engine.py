@@ -890,8 +890,8 @@ def forget_recalibrated(
     stored: dict[str, Any], sources: dict[str, str], wc_sources: dict[str, str] | None = None
 ) -> dict[str, Any]:
     """Drop learned calibrations whose input entities changed (or are unknown, i.e. state saved before
-    they were recorded): the heat ratio and radiator samples follow the heat-power and heat-counter
-    sources; the weather curve and actual-LWT offset follow the temperature and setpoint inputs."""
+    they were recorded): the heat ratio and radiator samples follow ``sources`` (heat power, heat counter,
+    water and room temperatures, flow); the weather curve and actual-LWT offset follow ``wc_sources``."""
     if stored.get("calibration_sources") != sources:
         for key in CALIBRATION_SECTIONS:
             stored.pop(key, None)
