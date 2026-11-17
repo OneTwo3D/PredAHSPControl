@@ -258,3 +258,8 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   (fixed 84.4) / 0.330 K (learned, settles ~77); remaining bias ~-0.12 K mostly 03-09 h and 15-21 h
   (heating start/setpoint behaviour, not modelled yet). The prediction_error sensors are long-run averages
   and will improve only slowly.
+* 17 Nov 2026 ~00:15 (owner, Onecta app): native schedules changed. Heating "User defined 1": 00:00 19 °C,
+  02:00 20, 03:30 21, 23:00 20 (was 00:00 19, 04:00 20, 07:00 21, 23:00 20; room only reached 19.9-20.7 °C
+  at 07-09 h on 10 of 10 days). DHW "User defined": heat-up 03:00 to 45 °C (was 13:52; hot water is used
+  mostly in the morning, so heat close to use on 7.6p; with the battery covering the afternoon run the cost
+  is about the same). Optional later: 48 °C every other day (larger lifts had COP 2.4-2.7 vs 1.4-1.7).
