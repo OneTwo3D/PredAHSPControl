@@ -26,11 +26,11 @@ BASE = {
 }
 
 
-def _snap(to_age_h, heartbeat_age_s):
+def _snap(to_age_h, heartbeat_age_s, to_on_bridge=True):
     rd = {**BASE, Role.TO: Reading(4.5, age_s=to_age_h * 3600)}
     if heartbeat_age_s is not None:
         rd[Role.HEARTBEAT] = Reading(1.0, age_s=heartbeat_age_s)
-    return validate(Snapshot(T0, rd))
+    return validate(Snapshot(T0, rd), to_on_bridge=to_on_bridge)
 
 
 def test_unchanged_outdoor_temperature_with_live_bridge_is_steady():
@@ -46,3 +46,10 @@ def test_outdoor_temperature_still_goes_stale_eventually():
 def test_without_live_bridge_the_short_limit_applies():
     assert _snap(4, 3600).issues[Role.TO].startswith("stale")  # heartbeat itself stale
     assert _snap(4, None).issues[Role.TO].startswith("stale")  # no heartbeat mapped/read
+
+
+def test_live_bridge_does_not_vouch_for_an_outdoor_sensor_elsewhere():
+    """Codex review PR #1 round 9: with the outdoor temperature from another device (e.g. a weather
+    station), the bridge heartbeat says nothing about it: the 3 h limit applies."""
+    assert _snap(4, 30, to_on_bridge=False).issues[Role.TO].startswith("stale")
+    assert Role.TO not in _snap(2, 30, to_on_bridge=False).issues

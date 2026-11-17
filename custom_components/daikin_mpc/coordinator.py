@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -127,6 +128,13 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             "calibration_sources": self._calibration_sources(),
             "wc_sources": self._wc_sources(),
         }
+
+    def _to_on_bridge(self) -> bool:
+        """Whether the outdoor temperature entity is on the heartbeat's device (the bridge)."""
+        reg = er.async_get(self.hass)
+        to = reg.async_get(self.mapping.get(Role.TO.value) or "")
+        hb = reg.async_get(self.mapping.get(Role.HEARTBEAT.value) or "")
+        return bool(to and hb and to.device_id and to.device_id == hb.device_id)
 
     def _wc_sources(self) -> dict[str, str]:
         """Entities the weather curve, RT gain and actual-LWT offset are learned from."""
@@ -250,7 +258,7 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
     async def _async_update_data(self) -> EngineStatus:
         now = dt_util.now()
         await self._async_weather(now)
-        snap = validate(self._snapshot(now))
+        snap = validate(self._snapshot(now), to_on_bridge=self._to_on_bridge())
         try:
             status = self.engine.process(snap, self._weather, self._external(), self._solcast())
         except Exception as err:  # never let a model error take HA down; surface it instead

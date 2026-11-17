@@ -324,3 +324,33 @@ def test_unknown_dhw_state_blocks_calibration_learning():
     assert eng.wc_learner.n == 0
     assert eng.lwt_offset_k == offset0
     assert eng.radiator_learner.samples == []
+
+
+def test_late_share_from_a_counter_reset_hour_is_not_booked():
+    """Codex review PR #1 round 9: a counter reset just after an hour boundary must not reach the
+    previous hour's reconciliation as late energy."""
+    from custom_components.daikin_mpc.core.accumulator import HourRecord
+
+    eng = ShadowEngine(EngineConfig())
+
+    def hour(i, dq, before=None, restart=False):
+        h = HourRecord(
+            T0 + timedelta(hours=i),
+            1.0,
+            {"ti": 20.5, "to": 5.0, "heat_w": 1000.0},
+            30,
+            40,
+            12,
+            {"heat_kwh": dq},
+            False,
+            False,
+            "heating_full",
+        )
+        h.mean_cover = {"heat_w": 1.0}
+        h.deltas_before_kwh = before or {}
+        h.counter_restart = restart
+        return h
+
+    eng._on_hour(hour(0, 1.0))
+    eng._on_hour(hour(1, 0.0, before={"heat_kwh": 500.0}, restart=True))  # meter reset
+    assert eng._heat_counter_kwh == pytest.approx(1.0)
