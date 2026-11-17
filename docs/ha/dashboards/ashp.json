@@ -14,7 +14,7 @@
      ],
      "card": {
       "type": "markdown",
-      "content": "<ha-alert alert-type=\"warning\" title=\"Defrosting\">Since {{ as_timestamp(states.binary_sensor.bridge0_mode_defrost_active.last_changed) | timestamp_custom('%H:%M') }} ({{ ((now() - states.binary_sensor.bridge0_mode_defrost_active.last_changed).total_seconds() / 60) | round(1) }} min), outside {{ states('sensor.bridge0_sensors_temperature_outside') | float(0) | round(1) }} \u00b0C, flow {{ states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(0) | round(1) }} \u00b0C</ha-alert>"
+      "content": "<ha-alert alert-type=\"warning\" title=\"Defrosting\">Since {{ as_timestamp(states.binary_sensor.bridge0_mode_defrost_active.last_changed) | timestamp_custom('%H:%M') }} ({{ ((now() - states.binary_sensor.bridge0_mode_defrost_active.last_changed).total_seconds() / 60) | round(1) }} min), outside {{ states('sensor.ecowitt_outdoor_temperature') | float(0) | round(1) }} \u00b0C, flow {{ states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(0) | round(1) }} \u00b0C</ha-alert>"
      }
     },
     {
@@ -201,7 +201,7 @@
        "name": "Return water"
       },
       {
-       "entity": "sensor.bridge0_sensors_temperature_outside",
+       "entity": "sensor.ecowitt_outdoor_temperature",
        "name": "Outside"
       }
      ]

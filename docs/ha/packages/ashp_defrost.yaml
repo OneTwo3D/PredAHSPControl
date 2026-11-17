@@ -60,7 +60,7 @@ template:
              else (this.state if this.state not in ['unknown', 'unavailable', ''] else none) }}
         attributes:
           outside_c: >
-            {{ states('sensor.bridge0_sensors_temperature_outside') | float(none)
+            {{ states('sensor.ecowitt_outdoor_temperature') | float(none)
                if trigger.id == 'start' else this.attributes.get('outside_c') }}
           flow_c_at_start: >
             {{ states('sensor.bridge0_sensors_temperature_r1t_hp2gas_water') | float(none)
