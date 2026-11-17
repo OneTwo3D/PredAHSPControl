@@ -263,3 +263,13 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   at 07-09 h on 10 of 10 days). DHW "User defined": heat-up 03:00 to 45 °C (was 13:52; hot water is used
   mostly in the morning, so heat close to use on 7.6p; with the battery covering the afternoon run the cost
   is about the same). Optional later: 48 °C every other day (larger lifts had COP 2.4-2.7 vs 1.4-1.7).
+* 17 Nov 2026: daikin_mpc reviewed and released. PR #1 (0.6.3-0.6.6 + Codex fixes, 11 rounds: weather curve
+  ignores setpoints at the 25 °C minimum, K learned only from heat reconciled with the heat counter in verified
+  space-heating hours, LWT offset after the minimum clamp, calibrations reset when their input entities are
+  remapped, explicit DHW-off required for calibration, outdoor age extension only for a bridge-device sensor)
+  merged cbab006, released v0.6.6. PR #2 (0.7.0: Predbat-flow battery pricing, stored-heat value in savings,
+  clock-aligned blocks, room_min_periods) merged 14eb615. Deployed 0.7.0 ~07:40 GMT; options room_min_periods =
+  00:00-03:30=19.5. MPC 'to' = sensor.ecowitt_outdoor_temperature since 01:20 GMT (Daikin sensor reads ~1.2 K
+  warmer; UA expected to settle ~70 W/K over 4-5 days). Weather curve and heat ratio restarted (new source
+  tracking). Two Codex mediums filed as bd P3 tasks (terminal heat price on variable tariffs; bridge heartbeat
+  vs frozen outdoor sensor).
