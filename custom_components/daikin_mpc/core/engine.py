@@ -507,7 +507,9 @@ class ShadowEngine:
         ):
             return
         dq, pw = h.deltas_kwh.get(Role.HEAT_KWH.value), h.means.get(Role.HEAT_W.value)
-        if dq is None or pw is None or dq <= 0 or pw <= 0:
+        # zero-step hours count too: a whole-kWh counter steps only in some hours, and keeping only those
+        # would inflate the ratio (the quantization averages out over the 20+ kWh compared)
+        if dq is None or pw is None or dq < 0 or pw <= 0:
             return
         self._heat_counter_kwh += dq
         self._heat_power_kwh += pw / 1000.0
@@ -871,6 +873,19 @@ class ShadowEngine:
         if acc is None and days._hours:
             raise ValueError("saved date without its in-progress hour")
         self.hours, self.days = hours, days
+
+
+CALIBRATION_SECTIONS = ("heat_reconcile_kwh", "radiator")
+
+
+def forget_recalibrated(stored: dict[str, Any], sources: dict[str, str]) -> dict[str, Any]:
+    """Drop the heat ratio and radiator samples when the heat-power or heat-counter source differs from
+    the one they were learned from (or is unknown, i.e. state saved before sources were recorded): the
+    old scaling would otherwise be applied to the new sensor's readings."""
+    if stored.get("calibration_sources") != sources:
+        for key in CALIBRATION_SECTIONS:
+            stored.pop(key, None)
+    return stored
 
 
 def _zone(d: dict[str, Any]) -> tzinfo | None:

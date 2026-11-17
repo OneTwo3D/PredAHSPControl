@@ -205,3 +205,49 @@ def test_hour_records_report_per_mean_coverage():
     h = out[0]
     assert h.mean_cover["ti"] == pytest.approx(h.coverage, abs=0.01)
     assert h.mean_cover["heat_w"] < 0.6
+
+
+def test_whole_kwh_counter_plateaus_do_not_bias_the_ratio():
+    """Codex review PR #1 round 5: at 0.8 kW a whole-kWh counter steps in only some hours; dropping the
+    zero-step hours inflated the ratio to ~1.25 with an unbiased sensor."""
+    from custom_components.daikin_mpc.core.accumulator import HourRecord
+
+    eng = ShadowEngine(EngineConfig())
+    true_kwh = 0.0
+    for i in range(40):  # 40 h at 0.8 kW
+        before = int(true_kwh)
+        true_kwh += 0.8
+        h = HourRecord(
+            T0 + timedelta(hours=i),
+            1.0,
+            {"ti": 20.5, "to": 5.0, "heat_w": 800.0},
+            30,
+            40,
+            12,
+            {"heat_kwh": float(int(true_kwh) - before)},
+            False,
+            False,
+            "heating_full",
+        )
+        h.mean_cover = {"heat_w": 1.0}
+        eng._reconcile_heat(h)
+    assert eng.heat_ratio() == pytest.approx(1.0, abs=0.04)
+
+
+def test_calibration_is_forgotten_when_its_sources_change():
+    """Codex review PR #1 round 5: remapping the heat-power sensor or heat counter resets the heat ratio
+    and the radiator samples learned from the old source."""
+    from custom_components.daikin_mpc.core.engine import forget_recalibrated
+
+    eng = ShadowEngine(EngineConfig())
+    _run(eng, T0, 30 * 60)
+    state = {**eng.to_dict(), "calibration_sources": {"heat_w": "sensor.raw", "heat_kwh": "sensor.c"}}
+    same = forget_recalibrated(dict(state), {"heat_w": "sensor.raw", "heat_kwh": "sensor.c"})
+    assert "radiator" in same and "heat_reconcile_kwh" in same
+    changed = forget_recalibrated(dict(state), {"heat_w": "sensor.corrected", "heat_kwh": "sensor.c"})
+    assert "radiator" not in changed and "heat_reconcile_kwh" not in changed
+    legacy = {k: v for k, v in state.items() if k != "calibration_sources"}  # saved before sources existed
+    assert "radiator" not in forget_recalibrated(legacy, {"heat_w": "sensor.raw", "heat_kwh": "sensor.c"})
+    fresh = ShadowEngine(EngineConfig())
+    assert fresh.load_dict(changed) == []
+    assert fresh.heat_ratio() is None and fresh.radiator_learner.samples == []
