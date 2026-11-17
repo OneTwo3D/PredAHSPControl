@@ -16,6 +16,16 @@ violates them is the least-violating one returned (reported as infeasible, best 
 targets (e.g. 21 °C 07–09 and 18–24) are soft: missing them costs a substantial but finite penalty. There
 is no fixed night setback: lower night setpoints are chosen only when they reduce J.
 
+Hard minimum: ``room_min`` or, per step, ``PlanInputs.min_c`` (e.g. a lower night minimum), applied
+alike to the plan and to the native schedule it is compared with.
+
+Stored heat: plans are compared including the heat left in the house at the end of the horizon, valued
+at the cheapest cost of heat within it (C · ΔTi · min(rate / COP)), so draining the building is not
+counted as a saving.
+
+Blocks: the first decision runs to the next whole hour (``PlanInputs.first_block_steps``), later ones
+follow the clock, so setpoint changes line up with tariff edges.
+
 Search: dynamic programming over hours with state merging on (setpoint, room temperature bin of
 ``ti_bin_k``, thermostat state), keeping the best path per state. Deterministic and bounded, but an
 approximation: two paths in one bin differ by up to ``ti_bin_k``, and the discarded one could turn out
@@ -51,14 +61,16 @@ class OptimiserConfig:
     w_target2_p_per_k2h: float = 60.0
     w_start_p: float = 1.0
     w_move_p_per_half_k: float = 0.3
+    # lowest time-varying minimum (PlanInputs.min_c), e.g. a night minimum below room_min; setpoints may
+    # go down to it
+    min_floor_c: float | None = None
 
     def __post_init__(self) -> None:
         if not self.room_min_c < self.room_max_c:
             raise ValueError("room_min must be below room_max")
-        if not self.setpoints or any(
-            not self.room_min_c - 1e-9 <= s <= self.room_max_c + 1e-9 for s in self.setpoints
-        ):
-            raise ValueError("setpoints must lie within [room_min, room_max]")
+        lo = min(self.room_min_c, self.min_floor_c if self.min_floor_c is not None else self.room_min_c)
+        if not self.setpoints or any(not lo - 1e-9 <= s <= self.room_max_c + 1e-9 for s in self.setpoints):
+            raise ValueError("setpoints must lie within [lowest minimum, room_max]")
 
 
 @dataclass(frozen=True)
@@ -71,9 +83,11 @@ class PlanInputs:
     to_c: Sequence[float]  # per step
     lwt_set_c: Sequence[float]  # per step, weather-curve LWT
     rate_p: Sequence[float]  # per step, marginal pence/kWh
-    baseline_setpoint_c: Sequence[float]  # per hour, what the native schedule would do
+    baseline_setpoint_c: Sequence[float]  # per block, what the native schedule would do
     target_c: Sequence[float | None] | None = None  # per step, soft comfort target (None = none)
     extra_gains_w: Sequence[float] | None = None  # per step, gains beyond the building's base gains
+    min_c: Sequence[float] | None = None  # per step, hard minimum (None: room_min throughout)
+    first_block_steps: int | None = None  # steps of the first decision (to the next whole hour)
 
 
 @dataclass
@@ -89,6 +103,8 @@ class PlanResult:
     feasible: bool
     nodes: int = 0
     violation_kh: float = 0.0  # K·h outside [room_min, room_max]
+    terminal_value_p: float = 0.0  # heat left in the house at the end vs the start, in pence
+    block_steps: list[int] = field(default_factory=list)  # steps per decision
 
     def energy_kwh(self) -> float:
         return sum(self.elec_kwh)
@@ -155,7 +171,8 @@ def _simulate_hour(
         if tgt is not None and ti < tgt:
             d = tgt - ti
             obj += (cfg.w_target_p_per_kh * d + cfg.w_target2_p_per_k2h * d * d) * dt
-        below = max(0.0, cfg.room_min_c - ti)
+        floor = inp.min_c[k] if inp.min_c is not None else cfg.room_min_c
+        below = max(0.0, floor - ti)
         above = max(0.0, ti - cfg.room_max_c)
         viol += (below + above) * dt
         lo, hi = min(lo, ti), max(hi, ti)
@@ -165,19 +182,38 @@ def _simulate_hour(
 
 
 def _check_inputs(inp: PlanInputs, cfg: OptimiserConfig) -> int:
-    """Validate sequence lengths; returns the number of whole hours that can be planned."""
+    """Validate sequence lengths; returns the number of decisions (blocks) that can be planned."""
+    return len(_blocks(inp, cfg))
+
+
+def _blocks(inp: PlanInputs, cfg: OptimiserConfig) -> list[tuple[int, int]]:
+    """(first step, steps) per decision: a first block to the next whole hour, then whole hours, within
+    ``horizon_h`` hours of steps."""
     per_h = round(1 / cfg.step_h)
     if per_h < 1 or abs(per_h * cfg.step_h - 1.0) > 1e-9:
         raise ValueError("step_h must divide one hour")
     steps = min(len(inp.to_c), len(inp.lwt_set_c), len(inp.rate_p))
-    if inp.target_c is not None:
-        steps = min(steps, len(inp.target_c))
-    if inp.extra_gains_w is not None:
-        steps = min(steps, len(inp.extra_gains_w))
-    hours = min(cfg.horizon_h, steps // per_h)
-    if hours < 1:
+    for seq in (inp.target_c, inp.extra_gains_w, inp.min_c):
+        if seq is not None:
+            steps = min(steps, len(seq))
+    steps = min(steps, cfg.horizon_h * per_h)
+    if steps < per_h:
         raise ValueError("inputs cover less than one hour")
-    return hours
+    first = inp.first_block_steps if inp.first_block_steps and 0 < inp.first_block_steps < per_h else per_h
+    out: list[tuple[int, int]] = []
+    k, n = 0, first
+    while k + n <= steps:
+        out.append((k, n))
+        k, n = k + n, per_h
+    return out
+
+
+def heat_value_p_per_k(
+    inp: PlanInputs, building: ThermalParams, cop: Callable[[float], float], steps: int
+) -> float:
+    """Pence per K of room temperature: the cheapest cost of heat within the horizon times C."""
+    p_heat = min(inp.rate_p[k] / max(cop(inp.to_c[k]), 1.0) for k in range(steps))  # p per kWh of heat
+    return building.c_wh_per_k / 1000.0 * p_heat
 
 
 def evaluate(
@@ -188,9 +224,9 @@ def evaluate(
     cop: Callable[[float], float],
     cfg: OptimiserConfig,
 ) -> PlanResult:
-    """Simulate a given hourly setpoint schedule."""
-    per_h = round(1 / cfg.step_h)
-    if len(setpoints_per_hour) > _check_inputs(inp, cfg):
+    """Simulate a given setpoint schedule (one setpoint per block)."""
+    blocks = _blocks(inp, cfg)
+    if len(setpoints_per_hour) > len(blocks):
         raise ValueError("schedule longer than the inputs")
     ti, running = inp.ti0_c, inp.running0 and inp.heating_enabled
     obj = energy = viol = 0.0
@@ -198,11 +234,12 @@ def evaluate(
     lo, hi = math.inf, -math.inf  # the initial temperature is given, not planned: range covers the plan
     tis, elec = [ti], []
     prev = inp.current_setpoint_c
-    for h, sp in enumerate(setpoints_per_hour):
+    used = blocks[: len(setpoints_per_hour)]
+    for (k0, n), sp in zip(used, setpoints_per_hour, strict=True):
         obj += cfg.w_move_p_per_half_k * abs(sp - prev) / 0.5
         prev = sp
         ti, running, o, e, v, s, a, b, t_tr, e_tr = _simulate_hour(
-            ti, running, sp, h * per_h, per_h, inp, building, plant, cop, cfg
+            ti, running, sp, k0, n, inp, building, plant, cop, cfg
         )
         obj += o
         energy += e
@@ -212,10 +249,23 @@ def evaluate(
         tis += t_tr
         elec += e_tr
     feasible = viol <= _VIOL_EPS
+    steps = sum(n for _, n in used)
+    terminal = heat_value_p_per_k(inp, building, cop, steps) * (ti - inp.ti0_c) if steps else 0.0
     # scalar objective for reporting only (ranking is lexicographic)
-    obj += cfg.w_bound_p_per_kh * viol
+    obj += cfg.w_bound_p_per_kh * viol - terminal
     return PlanResult(
-        list(setpoints_per_hour), tis, elec, energy, obj, starts, lo, hi, feasible, violation_kh=viol
+        list(setpoints_per_hour),
+        tis,
+        elec,
+        energy,
+        obj,
+        starts,
+        lo,
+        hi,
+        feasible,
+        violation_kh=viol,
+        terminal_value_p=terminal,
+        block_steps=[n for _, n in used],
     )
 
 
@@ -250,8 +300,8 @@ def optimise(
 ) -> PlanResult:
     """Cheapest hourly setpoint schedule by dynamic programming with state merging."""
     cfg = cfg or OptimiserConfig()
-    per_h = round(1 / cfg.step_h)
-    hours = _check_inputs(inp, cfg)
+    blocks = _blocks(inp, cfg)
+    vpk = heat_value_p_per_k(inp, building, cop, sum(n for _, n in blocks))
     start = _Node(
         0.0,
         0.0,
@@ -269,13 +319,13 @@ def optimise(
     # within the hard limits, and then report a false "cannot be held".
     frontier: dict[tuple[float, int, bool], list[_Node]] = {(start.sp, 0, start.running): [start]}
     nodes = 0
-    for h in range(hours):
+    for k0, n in blocks:
         nxt: dict[tuple[float, int, bool], list[_Node]] = {}
         for node in (n for group in frontier.values() for n in group):
             for sp in cfg.setpoints:
                 move = cfg.w_move_p_per_half_k * abs(sp - node.sp) / 0.5
                 ti, running, o, e, v, s, a, b, _, _ = _simulate_hour(
-                    node.ti, node.running, sp, h * per_h, per_h, inp, building, plant, cop, cfg
+                    node.ti, node.running, sp, k0, n, inp, building, plant, cop, cfg
                 )
                 nodes += 1
                 cand = _Node(
@@ -293,7 +343,11 @@ def optimise(
                 key = (sp, round(ti / cfg.ti_bin_k), running)
                 nxt[key] = _keep(nxt.get(key), cand)
         frontier = nxt
-    best = min((n for group in frontier.values() for n in group), key=_rank)
+    # the heat left in the house counts: a plan may not "save" by draining the building
+    best = min(
+        (x for group in frontier.values() for x in group),
+        key=lambda x: (_rank(x)[0], x.cost - vpk * (x.ti - inp.ti0_c)),
+    )
     result = evaluate(best.path, inp, building, plant, cop, cfg)
     result.nodes = nodes
     return result
@@ -314,14 +368,19 @@ def recommend(
     plan = optimise(inp, building, plant, cop, cfg)
     baseline = evaluate(list(inp.baseline_setpoint_c[:hours]), inp, building, plant, cop, cfg)
     sp_now = plan.setpoints_c[0]
-    saving = baseline.cost_p - plan.cost_p
+    # including the heat left in the house at the end (what the next day would otherwise pay for)
+    saving = (baseline.cost_p - baseline.terminal_value_p) - (plan.cost_p - plan.terminal_value_p)
+    offs = [0]
+    for n in plan.block_steps:
+        offs.append(offs[-1] + n)
 
     # Describe the schedule as contiguous blocks
     blocks: list[str] = []
     h0 = 0
     for h in range(1, hours + 1):
         if h == hours or plan.setpoints_c[h] != plan.setpoints_c[h0]:
-            a, b = add_hours(inp.start, h0), add_hours(inp.start, h)
+            a = add_hours(inp.start, offs[h0] * cfg.step_h)
+            b = add_hours(inp.start, offs[h] * cfg.step_h)
             days = (b.date() - inp.start.date()).days
             t_b = b.strftime("%H:%M") + (" next day" if days == 1 else f" +{days} d" if days > 1 else "")
             blocks.append(f"{a.strftime('%H:%M')}–{t_b} {plan.setpoints_c[h0]:.1f} °C")
@@ -339,7 +398,8 @@ def recommend(
         reason = (
             f"{verb.capitalize()} setpoint to {sp_now:.1f} °C. Plan: {'; '.join(blocks[:4])}"
             f"{' …' if len(blocks) > 4 else ''}. Expected {plan.energy_kwh():.2f} kWh, "
-            f"{plan.cost_p:.0f}p vs {baseline.cost_p:.0f}p for the current schedule; room "
+            f"{plan.cost_p:.0f}p vs {baseline.cost_p:.0f}p for the current schedule "
+            f"({saving:+.0f}p incl. heat left in the house); room "
             f"{plan.min_ti_c:.1f}–{plan.max_ti_c:.1f} °C."
         )
     return Recommendation(
@@ -356,6 +416,8 @@ def recommend(
             "baseline_min_c": round(baseline.min_ti_c, 2),
             "baseline_feasible": baseline.feasible,
             "plan_violation_kh": round(plan.violation_kh, 3),
+            "plan_terminal_value_p": round(plan.terminal_value_p, 1),
+            "baseline_terminal_value_p": round(baseline.terminal_value_p, 1),
             "nodes": plan.nodes,
         },
     )

@@ -5,6 +5,23 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.7.0] - 2026-11-17
+
+### Changed
+- **Battery-aware prices use Predbat's planned flows** (`predbat.import_energy` / `predbat.export_energy`):
+  a daytime slot costs the export rate only if Predbat plans to export then, the import rate if it plans
+  grid import (battery empty), otherwise the night recharge cost (about 8.6p). Before, every daytime hour
+  cost 12p (as if all stored energy could be exported), over-rewarding night heating about threefold.
+  Without a flow forecast the old rule applies. Price source changes are logged.
+- **Savings include the heat left in the house** at the end of the 24 h horizon (C x dTi at the cheapest
+  cost of heat in the horizon), for plan and baseline alike; plans can no longer "save" by draining it.
+- **Plan blocks follow the clock:** the first runs to the next whole hour, so changes meet tariff edges.
+
+### Added
+- **Lowest allowed temperature by time of day** (option *room_min_periods*, e.g. `00:00-04:00=19.5`): a
+  night minimum applied alike to the plan and the native schedule, which was always "infeasible" under
+  the all-day 20 degC minimum.
+
 ## [0.6.6] - 2026-11-17
 
 ### Fixed

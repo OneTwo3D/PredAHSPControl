@@ -31,6 +31,7 @@ from .const import (
     CONF_PREDHEAT_H8,
     CONF_ROOM_MAX,
     CONF_ROOM_MIN,
+    CONF_ROOM_MIN_PERIODS,
     CONF_SOLCAST,
     CONF_TARIFF_EXPORT,
     CONF_TARIFF_IMPORT,
@@ -40,6 +41,8 @@ from .const import (
     DEFAULT_OPTIMISER,
     DOMAIN,
     OPTIMISE_INTERVAL,
+    PREDBAT_EXPORT_FLOW,
+    PREDBAT_IMPORT_FLOW,
     PREDBAT_LOSSES,
     PREDBAT_RATES,
     PREDBAT_RATES_EXPORT,
@@ -96,10 +99,13 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         self._weather_fetched: datetime | None = None
         self.weather_error: str | None = None
         self.load_warnings: list[str] = []
+        self.min_periods = parse_periods(str(opts.get(CONF_ROOM_MIN_PERIODS) or ""))
+        floor = min([float(opts[CONF_ROOM_MIN]), *(p.rate_p for p in self.min_periods)])
         self.opt_cfg = OptimiserConfig(
             room_min_c=float(opts[CONF_ROOM_MIN]),
             room_max_c=float(opts[CONF_ROOM_MAX]),
-            setpoints=_setpoint_grid(float(opts[CONF_ROOM_MIN]), float(opts[CONF_ROOM_MAX])),
+            setpoints=_setpoint_grid(floor, float(opts[CONF_ROOM_MAX])),
+            min_floor_c=floor,
         )
         self.cost_basis = str(opts[CONF_COST_BASIS])
         self.fallback_import = parse_tariff(str(opts[CONF_TARIFF_IMPORT]))
@@ -289,6 +295,8 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
             round_trip_efficiency=eff,
             series=series(PREDBAT_RATES),
             export_series=series(PREDBAT_RATES_EXPORT),
+            import_flow=series(PREDBAT_IMPORT_FLOW),
+            export_flow=series(PREDBAT_EXPORT_FLOW),
         )
 
     async def _async_optimise(self, now: datetime, snap: Any, telemetry_ok: bool) -> None:
@@ -306,9 +314,18 @@ class DaikinMpcCoordinator(DataUpdateCoordinator[EngineStatus]):
         self._last_optimise = now
         try:
             cost = self._cost_provider()  # Predbat attributes are external data: keep inside the guard
+            if cost.source != self.cost_source:
+                log = _LOGGER.warning if "fixed tariff" in cost.source else _LOGGER.info
+                log("Daikin MPC prices: %s (was: %s)", cost.source, self.cost_source or "none")
             self.cost_source = cost.source
             self.recommendation = await self.hass.async_add_executor_job(
-                self.engine.recommend, snap, self._weather, cost, self.opt_cfg, self.comfort_periods
+                self.engine.recommend,
+                snap,
+                self._weather,
+                cost,
+                self.opt_cfg,
+                self.comfort_periods,
+                self.min_periods,
             )
             self.optimiser_error = None
         except Exception as err:  # the optimiser is advisory; never break telemetry/learning
