@@ -5,6 +5,17 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
 `custom_components/daikin_mpc/manifest.json` `version` and add a section here for every release.
 0.2.0 was never tagged (superseded by 0.2.1 the same day).
 
+## [0.7.1] - 2026-11-17
+
+### Changed
+- **Prediction-error sensors show a rolling error** (exponentially weighted, about the last 7 days of
+  hourly predictions) instead of the all-time average. The all-time average over ~900 predictions moved by
+  about 0.1 % per prediction and was still dominated by the pre-0.6.6 model, so the 1 h / 3 h / 8 h
+  sensors stayed at roughly 0.19 / 0.46 K whatever changed. The rolling value appears after about six
+  predictions; the all-time `n` / `mae` / `bias` remain as attributes, next to `mae_recent`,
+  `bias_recent` and `weight_recent`. Saved state from 0.7.0 or earlier keeps its all-time figures, and
+  the rolling figures start fresh (they measure the current model only).
+
 ## [0.7.0] - 2026-11-17
 
 ### Changed

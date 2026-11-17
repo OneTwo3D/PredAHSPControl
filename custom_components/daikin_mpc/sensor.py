@@ -39,8 +39,10 @@ def _ti(h: int) -> Callable[[EngineStatus], float | None]:
 
 
 def _err(name: str) -> Callable[[EngineStatus], float | None]:
+    """Rolling (~7-day) mean absolute error; the all-time values are in the attributes."""
+
     def f(s: EngineStatus) -> float | None:
-        mae = s.errors.get(name, {}).get("mae")
+        mae = s.errors.get(name, {}).get("mae_recent")
         return round(float(mae), 3) if mae is not None else None
 
     return f

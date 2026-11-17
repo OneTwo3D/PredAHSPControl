@@ -84,14 +84,35 @@ class EngineConfig:
 
 @dataclass
 class ErrorStats:
+    """All-time mean absolute error and bias, plus an exponentially weighted (rolling) version with a
+    memory of ~a week of hourly predictions, so changes to the model show within a day or two."""
+
     n: int = 0
     abs_sum: float = 0.0
     sum: float = 0.0
+    ew_w: float = 0.0  # rolling weight
+    ew_abs: float = 0.0
+    ew_sum: float = 0.0
+
+    DECAY = 1.0 - 1.0 / 168.0  # per prediction (hourly: ~7 days)
+    MIN_RECENT_WEIGHT = 5.5  # decayed weight of 6 predictions is 5.91: shown from the 6th
 
     def add(self, err: float) -> None:
         self.n += 1
         self.abs_sum += abs(err)
         self.sum += err
+        lam = self.DECAY
+        self.ew_w = lam * self.ew_w + 1.0
+        self.ew_abs = lam * self.ew_abs + abs(err)
+        self.ew_sum = lam * self.ew_sum + err
+
+    @property
+    def mae_recent(self) -> float | None:
+        return self.ew_abs / self.ew_w if self.ew_w >= self.MIN_RECENT_WEIGHT else None
+
+    @property
+    def bias_recent(self) -> float | None:
+        return self.ew_sum / self.ew_w if self.ew_w >= self.MIN_RECENT_WEIGHT else None
 
     @property
     def mae(self) -> float | None:
@@ -416,7 +437,17 @@ class ShadowEngine:
             learner_rejected=self.learner.rejected,
             learner_last_reason=self.learner.last_reason,
             hour_class_counts=dict(self.class_counts),
-            errors={k: {"n": v.n, "mae": v.mae, "bias": v.bias} for k, v in sorted(self.errors.items())},
+            errors={
+                k: {
+                    "n": v.n,
+                    "mae": v.mae,
+                    "bias": v.bias,
+                    "mae_recent": v.mae_recent,
+                    "bias_recent": v.bias_recent,
+                    "weight_recent": round(v.ew_w, 1),
+                }
+                for k, v in sorted(self.errors.items())
+            },
             cop_now=self.cop(to) if to is not None else None,
             lwt_required_c=lwt_req,
             lwt_required_heat_w=q_need,
@@ -701,7 +732,9 @@ class ShadowEngine:
             "version": ENGINE_STATE_VERSION,
             "learner": self.learner.to_dict(),
             "class_counts": dict(self.class_counts),
-            "errors": {k: [v.n, v.abs_sum, v.sum] for k, v in self.errors.items()},
+            "errors": {
+                k: [v.n, v.abs_sum, v.sum, v.ew_w, v.ew_abs, v.ew_sum] for k, v in self.errors.items()
+            },
             "setpoint_profile": {str(k): v for k, v in self.setpoint_profile.items()},
             "lwt_actual_offset_k": self.lwt_offset_k,
             "pending_day": self.pending_day.to_dict() if self.pending_day else None,
@@ -822,9 +855,11 @@ class ShadowEngine:
         errors: dict[str, ErrorStats] = {}
         for k, v in dict(d.get("errors") or {}).items():
             n, a, b = int(v[0]), float(v[1]), float(v[2])
-            if n < 0 or not (math.isfinite(a) and math.isfinite(b)):
+            # rolling part from 0.7.1 on; older state starts it fresh (it measures the current model)
+            w, ea, es = (float(v[3]), float(v[4]), float(v[5])) if len(v) >= 6 else (0.0, 0.0, 0.0)
+            if n < 0 or w < 0 or not all(math.isfinite(x) for x in (a, b, w, ea, es)):
                 raise ValueError(f"invalid error statistics for {k}")
-            errors[str(k)] = ErrorStats(n, a, b)
+            errors[str(k)] = ErrorStats(n, a, b, w, ea, es)
         self.errors = errors
 
     def _load_profile(self, d: dict[str, Any]) -> None:
