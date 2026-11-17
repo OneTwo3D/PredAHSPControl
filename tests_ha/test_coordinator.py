@@ -159,7 +159,7 @@ async def test_plan_times_keep_their_origin_and_diagnostics(hass: HomeAssistant,
 
 
 def test_calibration_fingerprint_covers_every_radiator_input():
-    """Codex review PR #1 round 7: remapping LWT, RWT, room temperature or flow resets the radiator samples."""
+    """Codex review PR #1 round 7: remapping LWT, RWT, room temperature or flow resets radiator samples."""
     from custom_components.daikin_mpc.coordinator import DaikinMpcCoordinator
     from custom_components.daikin_mpc.core.engine import forget_recalibrated
 
