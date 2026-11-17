@@ -187,6 +187,11 @@ class ShadowEngine:
             RadiatorParams(c.radiator_k, c.radiator_n), c.q_min_w, c.q_max_w, min_lwt_c=c.min_lwt_c
         )
         self.radiator_learner = RadiatorLearner(n=c.radiator_n)
+        # heat counter vs mapped heat power over space-heating hours (kWh): the counter is unbiased, the
+        # power sensor may not be (the default bridge flow x dT reads ~1/3 low); K is learned from the
+        # power scaled by their ratio, and only once it is established
+        self._heat_counter_kwh = 0.0
+        self._heat_power_kwh = 0.0
         (x0, y0), (x1, y1) = c.wc_curve[0], c.wc_curve[-1]
         slope0 = (y1 - y0) / (x1 - x0) if x1 != x0 else 0.0
         self.wc_learner = WeatherCurveLearner(
@@ -224,6 +229,8 @@ class ShadowEngine:
         )
 
     def _on_hour(self, h: HourRecord) -> None:
+        if self.cfg.learning_enabled:
+            self._reconcile_heat(h)
         """Feed consecutive hours to the free-cooling capacity learner; C follows its estimate."""
         self._recent_hours = [*self._recent_hours, h][-3:]
         if not self.cfg.learning_enabled or len(self._recent_hours) < 3:
@@ -449,8 +456,33 @@ class ShadowEngine:
             self.lwt_offset_k = 0.98 * self.lwt_offset_k + 0.02 * (lwt - lwt_set)
         if q is None or lwt is None or rwt is None or flow is None or ti is None or flow < rl.min_flow_l_min:
             return
-        if rl.add(q, (lwt + rwt) / 2, ti):
+        ratio = self.heat_ratio()
+        if ratio is None:
+            return  # power sensor not yet reconciled with the heat counter
+        if rl.add(q * ratio, (lwt + rwt) / 2, ti):
             self._apply_radiator()
+
+    HEAT_RECONCILE_MIN_KWH = 20.0
+
+    def heat_ratio(self) -> float | None:
+        """Heat counter / integrated heat power over space-heating hours, once 20 kWh are compared."""
+        if self._heat_counter_kwh < self.HEAT_RECONCILE_MIN_KWH or self._heat_power_kwh <= 0:
+            return None
+        r = self._heat_counter_kwh / self._heat_power_kwh
+        return r if 0.5 <= r <= 2.0 else None
+
+    def _reconcile_heat(self, h: HourRecord) -> None:
+        """Accumulate one finished hour of space heating (no DHW/defrost, well covered by samples)."""
+        if h.dhw or h.defrost or h.coverage < 0.85 or h.counter_gap or h.counter_restart or h.counter_stale:
+            return
+        dq, pw = h.deltas_kwh.get(Role.HEAT_KWH.value), h.means.get(Role.HEAT_W.value)
+        if dq is None or pw is None or pw <= 0:
+            return
+        self._heat_counter_kwh += dq
+        self._heat_power_kwh += pw / 1000.0
+        if self._heat_counter_kwh > 400.0:  # slow forgetting: keep roughly the last few weeks
+            self._heat_counter_kwh /= 2
+            self._heat_power_kwh /= 2
 
     def _apply_radiator(self) -> None:
         k = self.radiator_learner.estimate()
@@ -629,6 +661,7 @@ class ShadowEngine:
             "gains_basis": self._gains_basis,
             "basis_changed_day": self._basis_changed_day,
             "radiator": self.radiator_learner.to_dict(),
+            "heat_reconcile_kwh": [self._heat_counter_kwh, self._heat_power_kwh],
             "wc_learner": self.wc_learner.to_dict(),
         }
 
@@ -687,6 +720,12 @@ class ShadowEngine:
                 self._apply_wc()
             else:
                 warn.append("weather-curve learner state invalid; using the configured curve")
+        try:
+            num, den = (float(v) for v in d.get("heat_reconcile_kwh") or (0.0, 0.0))
+            if math.isfinite(num) and math.isfinite(den) and num >= 0 and den >= 0:
+                self._heat_counter_kwh, self._heat_power_kwh = num, den
+        except (TypeError, ValueError):
+            warn.append("heat reconciliation state invalid; starting again")
         if "radiator" in d:
             try:
                 rad_ok = self.radiator_learner.load_dict(dict(d["radiator"]))
