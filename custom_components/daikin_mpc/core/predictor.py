@@ -35,6 +35,9 @@ class PlantParams:
     # measured 0.655 K/K (Nov 2026 regression); learned online by WeatherCurveLearner
     rt_modulation_gain_k_per_k: float = 0.65
     rt_modulation_max_k: float = 5.0
+    # actual leaving water above the unit's (clamped) LWT setpoint in steady heating: the compressor at
+    # its minimum speed overshoots (+1.8 K, Nov 2026); learned by the engine
+    lwt_actual_offset_k: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,8 @@ def plant_step(
     if running:
         mod = plant.rt_modulation_gain_k_per_k * (sp - ti)
         mod = max(-plant.rt_modulation_max_k, min(plant.rt_modulation_max_k, mod))
-        lwt = max(lwt_set + mod, plant.min_lwt_c)
+        # the unit clamps its own setpoint (curve + modulation) at its minimum; the water runs above it
+        lwt = max(lwt_set + mod, plant.min_lwt_c) + plant.lwt_actual_offset_k
         mwt = lwt - plant.flow_return_dt_k / 2
         q = min(plant.q_max_w, plant.radiator.output_w(mwt, ti))
     return step(ti, to, q + extra_gains_w, step_h, building), running, q

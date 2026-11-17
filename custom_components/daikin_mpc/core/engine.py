@@ -32,6 +32,7 @@ from .gains import (
     pv_at,
 )
 from .heatpump_model import CopCurve
+from .intervals import IntervalClass
 from .learner import BuildingLearner, LearnerConfig
 from .optimiser import OptimiserConfig, PlanInputs, Recommendation, recommend
 from .predictor import Forecast, PlantParams, forecast
@@ -212,6 +213,7 @@ class ShadowEngine:
         # actual LWT minus the unit's LWT setpoint in steady space heating (learned; the radiators see the
         # actual water). Pre-0.6.6 this held "setpoint minus curve" and absorbed a wrong RT modulation.
         self.lwt_offset_k = self.cfg.lwt_actual_offset_k
+        self._apply_lwt_offset()
         self.last_hour: HourRecord | None = None
         self.last_day: DayRecord | None = None
         self.last_forecast: Forecast | None = None
@@ -355,7 +357,7 @@ class ShadowEngine:
         if s.complete and ti is not None and to is not None:
             to_steps, source = self._to_steps(t, to, to_forecast)
             sps = [self._setpoint_at(add_hours(t, STEP_H * i), sp) for i in range(len(to_steps))]
-            lwts = [self.wc_lwt(x) + self.lwt_offset_k for x in to_steps]
+            lwts = [self.wc_lwt(x) for x in to_steps]
             fc = forecast(
                 ti,
                 self._calling(s, hz),
@@ -454,6 +456,7 @@ class ShadowEngine:
         if lwt is not None and lwt_set is not None and abs(lwt - lwt_set) <= 10:
             # actual water above the unit's setpoint (minimum compressor output overshoots)
             self.lwt_offset_k = 0.98 * self.lwt_offset_k + 0.02 * (lwt - lwt_set)
+            self._apply_lwt_offset()
         if q is None or lwt is None or rwt is None or flow is None or ti is None or flow < rl.min_flow_l_min:
             return
         ratio = self.heat_ratio()
@@ -461,6 +464,11 @@ class ShadowEngine:
             return  # power sensor not yet reconciled with the heat counter
         if rl.add(q * ratio, (lwt + rwt) / 2, ti):
             self._apply_radiator()
+
+    def _apply_lwt_offset(self) -> None:
+        """The plant adds the learned actual-water offset after the unit's minimum-LWT clamp."""
+        if self.plant.lwt_actual_offset_k != self.lwt_offset_k:
+            self.plant = replace(self.plant, lwt_actual_offset_k=self.lwt_offset_k)
 
     HEAT_RECONCILE_MIN_KWH = 20.0
 
@@ -472,11 +480,23 @@ class ShadowEngine:
         return r if 0.5 <= r <= 2.0 else None
 
     def _reconcile_heat(self, h: HourRecord) -> None:
-        """Accumulate one finished hour of space heating (no DHW/defrost, well covered by samples)."""
-        if h.dhw or h.defrost or h.coverage < 0.85 or h.counter_gap or h.counter_restart or h.counter_stale:
+        """Accumulate one finished hour of continuous space heating only: classified heating_full, well
+        covered, no DHW/defrost flag and no DHW or backup-heater counter activity (a missing or late DHW
+        flag must not let DHW heat power into the comparison)."""
+        if (
+            h.cls != IntervalClass.HEATING_FULL.value
+            or h.dhw
+            or h.defrost
+            or h.coverage < 0.85
+            or h.counter_gap
+            or h.counter_restart
+            or h.counter_stale
+            or h.deltas_kwh.get(Role.DHW_HEAT_KWH.value, 0.0) > 0
+            or h.deltas_kwh.get(Role.BUH_KWH.value, 0.0) > 0
+        ):
             return
         dq, pw = h.deltas_kwh.get(Role.HEAT_KWH.value), h.means.get(Role.HEAT_W.value)
-        if dq is None or pw is None or pw <= 0:
+        if dq is None or pw is None or dq <= 0 or pw <= 0:
             return
         self._heat_counter_kwh += dq
         self._heat_power_kwh += pw / 1000.0
@@ -596,7 +616,7 @@ class ShadowEngine:
             current_setpoint_c=sp_now if sp_now is not None else baseline[0],
             heating_enabled=bool(enabled if enabled is not None else True),
             to_c=to_steps,
-            lwt_set_c=[self.wc_lwt(x) + self.lwt_offset_k for x in to_steps],
+            lwt_set_c=[self.wc_lwt(x) for x in to_steps],
             rate_p=[cost.marginal_rate(add_hours(t, STEP_H * (i + 0.5))) for i in range(len(to_steps))],
             baseline_setpoint_c=baseline,
             target_c=comfort_targets(t, len(to_steps), STEP_H, comfort_periods),
@@ -777,6 +797,7 @@ class ShadowEngine:
         # "lwt_offset_k" (≤ 0.6.5) absorbed a wrong modelled RT modulation and is ignored
         off = float(d.get("lwt_actual_offset_k", self.cfg.lwt_actual_offset_k))
         self.lwt_offset_k = off if math.isfinite(off) and abs(off) <= 10 else self.cfg.lwt_actual_offset_k
+        self._apply_lwt_offset()
 
     def _load_pending_day(self, d: dict[str, Any]) -> None:
         pdict = d.get("pending_day")

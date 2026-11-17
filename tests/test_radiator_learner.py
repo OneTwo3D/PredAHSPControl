@@ -149,3 +149,24 @@ def test_k_is_not_learned_before_the_sensor_is_reconciled():
     assert eng.heat_ratio() is None
     assert eng.radiator_learner.samples == []
     assert eng.plant.radiator.k_w_per_kn == pytest.approx(84.4)
+
+
+def test_reconciliation_counts_only_continuous_space_heating_hours():
+    """Codex review PR #1 round 3: hours with DHW counter activity (flag missing), backup heat or no
+    continuous heating must not enter the heat-counter / heat-power ratio."""
+    from custom_components.daikin_mpc.core.accumulator import HourRecord
+
+    eng = ShadowEngine(EngineConfig())
+
+    def hour(cls, deltas, heat_w=1000.0, dhw=False):
+        return HourRecord(
+            T0, 1.0, {"ti": 20.5, "to": 5.0, "heat_w": heat_w}, 30, 40, 12, deltas, False, dhw, cls
+        )
+
+    eng._reconcile_heat(hour("heating_full", {"heat_kwh": 1.0, "dhw_heat_kwh": 0.0}))
+    eng._reconcile_heat(hour("heating_full", {"heat_kwh": 1.0, "dhw_heat_kwh": 0.6}))  # DHW flag missing
+    eng._reconcile_heat(hour("heating_full", {"heat_kwh": 1.0, "buh_kwh": 0.5}))  # backup heater
+    eng._reconcile_heat(hour("heating_partial", {"heat_kwh": 0.4}))  # not continuous
+    eng._reconcile_heat(hour("off", {"heat_kwh": 0.0}, heat_w=-10.0))
+    assert eng._heat_counter_kwh == pytest.approx(1.0)
+    assert eng._heat_power_kwh == pytest.approx(1.0)

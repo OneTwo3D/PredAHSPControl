@@ -136,3 +136,17 @@ def test_minimum_lwt_readings_do_not_flatten_the_learned_curve():
         eng.process(_heating(t, to, 20.5, 20.3, 30.6 - 0.58 * to + 0.65 * 0.2), None, {}, None)
         t += timedelta(minutes=5)
     assert eng.wc_lwt(-5.0) == pytest.approx(30.6 + 0.58 * 5, abs=0.3)
+
+
+def test_actual_lwt_offset_is_added_after_the_minimum_clamp():
+    """Codex review PR #1 round 3: the unit clamps its own setpoint (curve + RT modulation) at the
+    minimum; the actual water then runs the measured offset above it."""
+    from custom_components.daikin_mpc.core.predictor import plant_step
+    from custom_components.daikin_mpc.core.thermal_model import ThermalParams
+
+    p = PlantParams(RadiatorParams(84.4), lwt_actual_offset_k=1.8)
+    b = ThermalParams(75.7, 5000.0, 111.0)
+    # curve at its 25 °C floor, room 0.5 K above setpoint (negative modulation), heating running
+    _, _, q = plant_step(21.5, True, 12.0, 21.0, 25.0, True, b, p, 0.25)
+    expected_mwt = 25.0 + 1.8 - p.flow_return_dt_k / 2
+    assert q == pytest.approx(84.4 * (expected_mwt - 21.5) ** 1.3)
