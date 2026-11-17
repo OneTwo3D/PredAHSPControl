@@ -60,6 +60,9 @@ class HourRecord:
     deltas_before_kwh: dict[str, float] = field(default_factory=dict)
     # share of the hour each mean actually covers (an optional sensor may be missing for part of it)
     mean_cover: dict[str, float] = field(default_factory=dict)
+    # every sample of the hour had a valid DHW-active reading that was off (an unknown state could be a
+    # short hot-water run the whole-kWh DHW counter does not show); False for older records
+    dhw_known_off: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -92,6 +95,7 @@ class HourRecord:
                 str(k): _num_in(v, 0.0) for k, v in dict(d.get("deltas_before_kwh") or {}).items()
             },
             mean_cover={str(k): _num_in(v, 0.0, 1.0) for k, v in dict(d.get("mean_cover") or {}).items()},
+            dhw_known_off=bool(d.get("dhw_known_off", False)),
         )
         if rec.cls != IntervalClass.INVALID.value and not {"ti", "to"} <= rec.means.keys():
             raise ValueError("usable hour without temperature means")
@@ -143,6 +147,7 @@ class _Acc:
     counter_restart: bool = False
     bracket: bool | None = None  # see HourRecord.counter_bracket
     before: dict[str, float] = field(default_factory=dict)  # see HourRecord.deltas_before_kwh
+    dhw_unknown: bool = False  # some sample lacked a valid DHW-active reading
 
 
 def _num_out(v: float) -> float | None:
@@ -259,6 +264,7 @@ class HourAccumulator:
             a.flow_min = min(a.flow_min, flow)
         a.defrost |= bool(s.get(Role.DEFROST))
         a.dhw |= bool(s.get(Role.DHW_ACTIVE))
+        a.dhw_unknown |= s.get(Role.DHW_ACTIVE) is None
         return done
 
     def _counter_increments(
@@ -333,6 +339,7 @@ class HourAccumulator:
                 "counter_restart": a.counter_restart,
                 "bracket": a.bracket,
                 "before": dict(a.before),
+                "dhw_unknown": a.dhw_unknown,
             }
         return {"acc": acc, "last_time": self._last_time.isoformat() if self._last_time else None}
 
@@ -378,6 +385,7 @@ class HourAccumulator:
                 counter_restart=bool(raw.get("counter_restart", False)),
                 bracket=None if raw.get("bracket") is None else bool(raw["bracket"]),
                 before={str(k): _num_in(v, 0.0) for k, v in dict(raw.get("before") or {}).items()},
+                dhw_unknown=bool(raw.get("dhw_unknown", True)),
             )
         lt = d.get("last_time")
         last_time = datetime.fromisoformat(str(lt)) if lt else None
@@ -426,6 +434,7 @@ class HourAccumulator:
             a.bracket,
             dict(a.before),
             mean_cover={k: min(1.0, w / 3600.0) for k, w in a.weights.items()},
+            dhw_known_off=not a.dhw and not a.dhw_unknown,
         )
 
 

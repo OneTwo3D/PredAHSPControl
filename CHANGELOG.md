@@ -17,6 +17,10 @@ Each `## [x.y.z]` section becomes the GitHub release notes for tag `vx.y.z`, cre
   cost of heat in the horizon), for plan and baseline alike; plans can no longer "save" by draining it.
 - **Plan blocks follow the clock:** the first runs to the next whole hour, so changes meet tariff edges.
 
+### Fixed
+- Heat reconciliation only counts hours whose DHW-active reading was valid and off throughout (a short
+  hot-water run with the optional signal missing could leave the whole-kWh DHW counter unchanged).
+
 ### Added
 - **Lowest allowed temperature by time of day** (option *room_min_periods*, e.g. `00:00-04:00=19.5`): a
   night minimum applied alike to the plan and the native schedule, which was always "infeasible" under

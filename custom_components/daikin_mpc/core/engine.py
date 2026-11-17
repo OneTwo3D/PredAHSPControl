@@ -502,6 +502,7 @@ class ShadowEngine:
             self._heat_counter_kwh += late
         if (
             h.cls != IntervalClass.HEATING_FULL.value
+            or not h.dhw_known_off
             or h.dhw
             or h.defrost
             or h.coverage < 0.85
