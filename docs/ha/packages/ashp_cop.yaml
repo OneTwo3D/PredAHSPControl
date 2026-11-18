@@ -11,6 +11,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_daily, sensor.ashp_heating_power_consumption_daily]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Heating COP (daily)"
         unique_id: ashp_heating_cop_daily
@@ -24,6 +32,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_weekly, sensor.ashp_heating_power_consumption_weekly]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Heating COP (weekly)"
         unique_id: ashp_heating_cop_weekly
@@ -37,6 +53,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_monthly, sensor.ashp_heating_power_consumption_monthly]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Heating COP (monthly)"
         unique_id: ashp_heating_cop_monthly
@@ -50,6 +74,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_yearly, sensor.ashp_heating_power_consumption_annually]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Heating COP (annually)"
         unique_id: ashp_heating_cop_annually
@@ -63,6 +95,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_dhw_heat_measured_daily, sensor.ashp_dhw_power_consumption_daily]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP DHW COP (daily)"
         unique_id: ashp_dhw_cop_daily
@@ -76,6 +116,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_dhw_heat_measured_weekly, sensor.ashp_dhw_power_consumption_weekly]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP DHW COP (weekly)"
         unique_id: ashp_dhw_cop_weekly
@@ -89,6 +137,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_dhw_heat_measured_monthly, sensor.ashp_dhw_power_consumption_monthly]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP DHW COP (monthly)"
         unique_id: ashp_dhw_cop_monthly
@@ -102,6 +158,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_dhw_heat_measured_yearly, sensor.ashp_dhw_power_consumption_annually]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP DHW COP (annually)"
         unique_id: ashp_dhw_cop_annually
@@ -115,6 +179,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_daily, sensor.ashp_dhw_heat_measured_daily, sensor.ashp_daily_electricity]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Total COP (daily)"
         unique_id: ashp_total_cop_daily
@@ -128,6 +200,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_weekly, sensor.ashp_dhw_heat_measured_weekly, sensor.ashp_weekly_power_consumption_total]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Total COP (weekly)"
         unique_id: ashp_total_cop_weekly
@@ -141,6 +221,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_monthly, sensor.ashp_dhw_heat_measured_monthly, sensor.ashp_monthly_power_consumption_total]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Total COP (monthly)"
         unique_id: ashp_total_cop_monthly
@@ -154,6 +242,14 @@ template:
   - trigger:
       - platform: state
         entity_id: [sensor.ashp_heating_heat_measured_yearly, sensor.ashp_dhw_heat_measured_yearly, sensor.ashp_annual_power_consumption_total]
+      # also recalculate after a restart / template reload and hourly: otherwise a period whose meters
+      # don't change (e.g. no hot-water run that day) stays 'unknown' until its next use
+      - platform: homeassistant
+        event: start
+      - platform: event
+        event_type: event_template_reloaded
+      - platform: time_pattern
+        minutes: 7
     sensor:
       - name: "ASHP Total COP (annually)"
         unique_id: ashp_total_cop_annually
