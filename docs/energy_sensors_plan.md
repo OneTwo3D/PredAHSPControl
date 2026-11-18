@@ -273,3 +273,24 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   warmer; UA expected to settle ~70 W/K over 4-5 days). Weather curve and heat ratio restarted (new source
   tracking). Two Codex mediums filed as bd P3 tasks (terminal heat price on variable tariffs; bridge heartbeat
   vs frozen outdoor sensor).
+
+## Solis grid regulation: Battery Saving off, export calibration 75 W (17-18 Nov 2026)
+
+- Symptom: while the battery covered the house, the grid still imported ~200 W at night and ~120 W while the
+  PV input was awake (MPPT holding `sensor.solis_pv_voltage_1` at ~75 V, ~07:10-16:30). That was ~2 kWh a day
+  at the full rate.
+- Causes:
+  - The Solis CT reads ~70-75 W less import than the smart meter at all hours. The error grows a little with
+    reactive load (~70 W per kVAr).
+  - "Battery Saving" was on: it powered the inverter's own standby (~76 W, `sensor.solis_standby_power`) from
+    the grid whenever the PV side slept. That added a second, clock-like step at dawn and dusk.
+- Fix, set by the user in the Solis app:
+  - Battery Saving disabled (~20:13 GMT 17 Nov).
+  - Export calibration set to 75 W. The history was -30 -> +65 -> +155 -> 75.
+- Result, 17 Nov 20:30 to 18 Nov 19:30, battery discharging: night about -5 W, PV awake about +3 W.
+  Over 11.7 h: 0.025 kWh imported, 0.09 kWh exported. No automation is needed.
+- `sensor.solis_meter_active_power` still shows ~70 W export at true zero. The export calibration changes the
+  inverter's control target, not this reading. Nothing live uses the reading:
+  - Predbat and the Energy dashboard use the smart meter.
+  - `sensor.solis_power` uses the Solis CT only as a fallback while the smart meter is unavailable.
+    Fallback formula `(53 - solis)/0.94`; a refit gives `solis = -0.963 x smart + 72`.
