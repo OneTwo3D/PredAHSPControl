@@ -100,6 +100,10 @@ template:
           {% set tank = states('sensor.bridge0_dhw_temperature_r5t_dhw_tank') | float(99) %}
           {% set defrost = is_state('binary_sensor.bridge0_mode_defrost_active', 'on') %}
           {% set dhw_run = is_state('binary_sensor.bridge0_dhw_dhw_demand', 'on') %}
+          {# the state saved for the restore must be real: bridge entities have to report valid states #}
+          {% set bridge_ok = states('switch.bridge0_mode_altherma_on') in ['on', 'off']
+                             and states('climate.bridge0_dhw_dhw_setpoint') in ['heat', 'off']
+                             and states('switch.bridge0_dhw_dhw_boost') in ['on', 'off'] %}
           {% set started = as_timestamp(states('input_datetime.ashp_axle_started'), 0) %}
           {% set too_long = (now().timestamp() - started) > 10800 %}
           {# a real event already responded to (e.g. ended by the 3 h cap or a guard) is not started again #}
@@ -114,9 +118,9 @@ template:
           {% elif real_start and started >= real_start %}
             skip:done
           {% elif kind == 'export' %}
-            {% if room < 18.5 %}skip:room{% elif defrost %}wait:defrost{% elif dhw_run %}wait:dhw_run{% else %}start_export{% endif %}
+            {% if room < 18.5 %}skip:room{% elif not bridge_ok %}wait:bridge{% elif defrost %}wait:defrost{% elif dhw_run %}wait:dhw_run{% else %}start_export{% endif %}
           {% else %}
-            {% if tank >= 53 %}skip:tank{% elif defrost %}wait:defrost{% else %}start_import{% endif %}
+            {% if tank >= 53 %}skip:tank{% elif not bridge_ok %}wait:bridge{% elif defrost %}wait:defrost{% else %}start_import{% endif %}
           {% endif %}
 
 script:
@@ -183,7 +187,7 @@ script:
                    and is_state('climate.bridge0_dhw_dhw_setpoint', 'off') }}
               timeout: "00:01:30"
               continue_on_timeout: true
-          until: "{{ wait.completed or repeat.index >= 2 }}"
+          until: "{{ wait.completed or repeat.index >= 2 or is_state('sensor.ashp_axle_decision', 'end') }}"
       - if: "{{ not wait.completed }}"
         then:
           - action: notify.mobile_app_jan_mobile
@@ -229,7 +233,7 @@ script:
                    and is_state('switch.bridge0_dhw_dhw_boost', 'on') }}
               timeout: "00:01:30"
               continue_on_timeout: true
-          until: "{{ wait.completed or repeat.index >= 2 }}"
+          until: "{{ wait.completed or repeat.index >= 2 or is_state('sensor.ashp_axle_decision', 'end') }}"
       - if: "{{ not wait.completed }}"
         then:
           - action: notify.mobile_app_jan_mobile
@@ -243,7 +247,8 @@ script:
       - variables:
           saved: "{{ states('input_text.ashp_axle_saved') | from_json(default={}) }}"
           mode: "{{ states('input_text.ashp_axle_active') }}"
-          want_on: "{{ saved.on | default('on') if mode == 'export' else states('switch.bridge0_mode_altherma_on') }}"
+          # anything but a valid saved on/off falls back to heating on (the safe state)
+          want_on: "{{ (saved.on if saved.on | default('') in ['on', 'off'] else 'on') if mode == 'export' else states('switch.bridge0_mode_altherma_on') }}"
           want_dhw: "{{ saved.dhw if saved.dhw | default('') in ['heat', 'off'] else states('climate.bridge0_dhw_dhw_setpoint') }}"
           want_t: "{{ saved.t | default(45) | float(45) }}"
           want_boost: "{{ saved.boost if saved.boost | default('') in ['on', 'off'] else 'off' }}"
@@ -315,50 +320,45 @@ script:
         continue_on_error: true
 
 automation:
-  - id: ashp_axle_event_start
-    alias: "ASHP Axle event start"
+  # One queued automation for start and end, so a restore never runs while a start is still writing or
+  # verifying: it waits in the queue and then sees the start's final state.
+  - id: ashp_axle_event
+    alias: "ASHP Axle event start/end"
     mode: queued
+    max: 5
     triggers:
       - trigger: state
         entity_id: sensor.ashp_axle_decision
-        to: [start_export, start_import]
-      - trigger: homeassistant
-        event: start
-    conditions:
-      - condition: state
-        entity_id: sensor.ashp_axle_decision
-        state: [start_export, start_import]
-      - "{{ states('input_text.ashp_axle_active') not in ['export', 'import'] }}"
-    actions:
-      - action: "script.ashp_axle_{{ states('sensor.ashp_axle_decision') }}"
-      - condition: "{{ states('input_text.ashp_axle_active') in ['export', 'import'] }}"  # not rolled back
-      - action: notify.mobile_app_jan_mobile
-        continue_on_error: true
-        data:
-          title: "Axle event: heat pump {{ 'off' if states('input_text.ashp_axle_active') == 'export' else 'heating hot water' }}"
-          message: >
-            {{ 'Space heating and hot water off until the export event ends.'
-               if states('input_text.ashp_axle_active') == 'export'
-               else 'Hot water heating to 55 °C during the import event.' }}
-            {{ ' (simulated)' if is_state('input_boolean.ashp_axle_simulate', 'on') else '' }}
-
-  - id: ashp_axle_event_end
-    alias: "ASHP Axle event end"
-    mode: queued
-    triggers:
-      - trigger: state
-        entity_id: sensor.ashp_axle_decision
-        to: end
+        to: [start_export, start_import, end]
       - trigger: homeassistant
         event: start
       - trigger: time_pattern
         minutes: "/5"
-    conditions:
-      - condition: state
-        entity_id: sensor.ashp_axle_decision
-        state: end
     actions:
-      - action: script.ashp_axle_restore
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: sensor.ashp_axle_decision
+                state: [start_export, start_import]
+              - "{{ states('input_text.ashp_axle_active') not in ['export', 'import'] }}"
+            sequence:
+              - action: "script.ashp_axle_{{ states('sensor.ashp_axle_decision') }}"
+              - condition: "{{ states('input_text.ashp_axle_active') in ['export', 'import'] }}"  # not rolled back
+              - action: notify.mobile_app_jan_mobile
+                continue_on_error: true
+                data:
+                  title: "Axle event: heat pump {{ 'off' if states('input_text.ashp_axle_active') == 'export' else 'heating hot water' }}"
+                  message: >
+                    {{ 'Space heating and hot water off until the export event ends.'
+                       if states('input_text.ashp_axle_active') == 'export'
+                       else 'Hot water heating to 55 °C during the import event.' }}
+                    {{ ' (simulated)' if is_state('input_boolean.ashp_axle_simulate', 'on') else '' }}
+          - conditions:
+              - condition: state
+                entity_id: sensor.ashp_axle_decision
+                state: end
+            sequence:
+              - action: script.ashp_axle_restore
 
   - id: ashp_axle_event_announced
     alias: "ASHP Axle event announced"

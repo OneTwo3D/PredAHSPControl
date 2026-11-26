@@ -70,6 +70,9 @@ def _base(**over: Any) -> dict[str, Any]:
         "binary_sensor.bridge0_mode_defrost_active": "off",
         "binary_sensor.bridge0_dhw_dhw_demand": "off",
         "sensor.bridge0_dhw_temperature_r5t_dhw_tank": "41.0",
+        "switch.bridge0_mode_altherma_on": "on",
+        "climate.bridge0_dhw_dhw_setpoint": "heat",
+        "switch.bridge0_dhw_dhw_boost": "off",
     }
     s.update(over)
     return s
@@ -228,12 +231,42 @@ def _dump(obj: Any) -> str:
     return json.dumps(obj)
 
 
-def test_start_and_end_act_only_on_decisions():
-    for part in ("start", "end"):
-        a = _automation(f"Axle event {part}")
-        triggers = _dump(a["triggers"])
-        assert "sensor.ashp_axle_decision" in triggers
-        assert a["mode"] == "queued"
+def test_start_and_end_share_one_queued_automation():
+    a = _automation("Axle event start/end")
+    assert a["mode"] == "queued"
+    triggers = _dump(a["triggers"])
+    assert "sensor.ashp_axle_decision" in triggers and "start_export" in triggers and '"end"' in triggers
+    assert "time_pattern" in triggers  # periodic retry of an unconfirmed restore
+    branches = a["actions"][0]["choose"]
+    assert "script.ashp_axle_" in _dump(branches[0]["sequence"])
+    assert _dump(branches[1]["sequence"]) == '[{"action": "script.ashp_axle_restore"}]'
+    assert not any(
+        x["alias"] in ("ASHP Axle event start", "ASHP Axle event end") for x in _pkg()["automation"]
+    )
+
+
+def test_start_retries_stop_when_the_event_ends():
+    for name in ("ashp_axle_start_export", "ashp_axle_start_import"):
+        loop = next(step["repeat"] for step in _pkg()["script"][name]["sequence"] if "repeat" in step)
+        assert "is_state('sensor.ashp_axle_decision', 'end')" in loop["until"]
+
+
+@pytest.mark.parametrize("kind", ["export", "import"])
+@pytest.mark.parametrize(
+    "eid",
+    ["switch.bridge0_mode_altherma_on", "climate.bridge0_dhw_dhw_setpoint", "switch.bridge0_dhw_dhw_boost"],
+)
+def test_waits_for_valid_bridge_states_before_saving_them(kind, eid):
+    over = {"binary_sensor.predbat_axle_event": _event(kind), eid: "unavailable"}
+    assert decide(**over) == "wait:bridge"
+
+
+def test_restore_falls_back_to_heating_on_for_an_invalid_saved_state():
+    v = _pkg()["script"]["ashp_axle_restore"]["sequence"][0]["variables"]["want_on"]
+    tpl = "{% set saved = {'on': 'unavailable'} %}{% set mode = 'export' %}" + v
+    assert _render(tpl, _base()) == "on"
+    tpl = "{% set saved = {'on': 'off'} %}{% set mode = 'export' %}" + v
+    assert _render(tpl, _base()) == "off"
 
 
 def test_starts_record_state_first_and_set_the_marker_last():
