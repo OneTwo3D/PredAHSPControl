@@ -294,3 +294,31 @@ Energy (kWh; integral `method: left`, `max_sub_interval: 1 min`; utility meters 
   - Predbat and the Energy dashboard use the smart meter.
   - `sensor.solis_power` uses the Solis CT only as a fallback while the smart meter is unavailable.
     Fallback formula `(53 - solis)/0.94`; a refit gives `solis = -0.963 x smart + 72`.
+
+## Axle grid events: heat-pump response (`packages/ashp_axle.yaml`, Nov 2026)
+
+- Source: Predbat's `binary_sensor.predbat_axle_event`.
+  - It is `on` during an event. `event_current` holds the next event from its announcement (6-31 h ahead,
+    usually ~12:30-13:10 UTC). Each entry has `start_time`, `end_time`, `import_export` and `pence_per_kwh`.
+  - HA's history API hides attribute-only changes unless `significant_changes_only=0`.
+- **Export events:** space heating off and hot water held off until the event ends, then the previous state
+  is restored.
+  - `switch.bridge0_mode_altherma_on` switches space heating only; `climate.bridge0_room_room_heating`
+    follows it. Hot water stays enabled (tested 26 Nov 2026).
+  - Guards: start only with the room >= 18.5 °C, no defrost and no hot-water run in progress; end early
+    below 18.0 °C.
+- **Import events:** hot water heated towards 55 °C (DHW switched on if off, target 55 °C, boost on), then the
+  target and on/off are restored.
+  - Skipped with the tank already >= 53 °C; ends at 54.5 °C.
+- **Both:**
+  - capped at 3 h; an event already responded to is not started again;
+  - `input_boolean.ashp_axle_response` switches the feature (off = restore now);
+  - `input_boolean.ashp_axle_simulate` and `input_select.ashp_axle_simulate_type` simulate an event;
+  - the previous state is kept in `input_text.ashp_axle_saved` / `input_text.ashp_axle_active`, so a
+    restart mid-event restores correctly.
+- No pre-heating: one hour off costs ~0.2 K (UA ~75 W/K, C ~5 kWh/K). A phone notification is sent when an
+  event is announced, when the response starts, and when it ends with its log line (kWh avoided or added
+  vs the previous hour's mean power, and the value). The last result is in `input_text.ashp_axle_last`.
+- Writes through the P1P2 bridge: 2-4 per export event, 4-6 per import event.
+- The decision logic is one template sensor, `sensor.ashp_axle_decision`, unit-tested in
+  `tests/test_ha_axle_package.py`.
