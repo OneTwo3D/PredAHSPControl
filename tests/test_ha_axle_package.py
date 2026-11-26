@@ -71,7 +71,7 @@ def _base(**over: Any) -> dict[str, Any]:
         "binary_sensor.bridge0_dhw_dhw_demand": "off",
         "sensor.bridge0_dhw_temperature_r5t_dhw_tank": "41.0",
         "switch.bridge0_mode_altherma_on": "on",
-        "climate.bridge0_dhw_dhw_setpoint": "heat",
+        "climate.bridge0_dhw_dhw_setpoint": ("heat", {"temperature": 45.0}),
         "switch.bridge0_dhw_dhw_boost": "off",
     }
     s.update(over)
@@ -258,6 +258,25 @@ def test_start_retries_stop_when_the_event_ends():
 )
 def test_waits_for_valid_bridge_states_before_saving_them(kind, eid):
     over = {"binary_sensor.predbat_axle_event": _event(kind), eid: "unavailable"}
+    assert decide(**over) == "wait:bridge"
+
+
+@pytest.mark.parametrize(
+    "eid", ["binary_sensor.bridge0_mode_defrost_active", "binary_sensor.bridge0_dhw_dhw_demand"]
+)
+@pytest.mark.parametrize("raw", ["unknown", "unavailable"])
+def test_export_waits_when_a_guard_sensor_is_not_known(eid, raw):
+    over = {"binary_sensor.predbat_axle_event": _event("export"), eid: raw}
+    assert decide(**over).startswith("wait:")
+
+
+@pytest.mark.parametrize("kind", ["export", "import"])
+@pytest.mark.parametrize("attrs", [{}, {"temperature": None}, {"temperature": 0}, {"temperature": 75}])
+def test_waits_for_a_valid_dhw_target_before_saving_it(kind, attrs):
+    over = {
+        "binary_sensor.predbat_axle_event": _event(kind),
+        "climate.bridge0_dhw_dhw_setpoint": ("heat", attrs),
+    }
     assert decide(**over) == "wait:bridge"
 
 

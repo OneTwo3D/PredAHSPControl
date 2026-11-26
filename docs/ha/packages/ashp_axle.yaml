@@ -98,12 +98,14 @@ template:
           {% set active = active if active in ['export', 'import'] else '' %}
           {% set room = states('sensor.bridge0_sensors_temperature_room') | float(-99) %}
           {% set tank = states('sensor.bridge0_dhw_temperature_r5t_dhw_tank') | float(99) %}
-          {% set defrost = is_state('binary_sensor.bridge0_mode_defrost_active', 'on') %}
-          {% set dhw_run = is_state('binary_sensor.bridge0_dhw_dhw_demand', 'on') %}
+          {# guards count as clear only when explicitly off: unknown/unavailable means wait #}
+          {% set defrost = not is_state('binary_sensor.bridge0_mode_defrost_active', 'off') %}
+          {% set dhw_run = not is_state('binary_sensor.bridge0_dhw_dhw_demand', 'off') %}
           {# the state saved for the restore must be real: bridge entities have to report valid states #}
           {% set bridge_ok = states('switch.bridge0_mode_altherma_on') in ['on', 'off']
                              and states('climate.bridge0_dhw_dhw_setpoint') in ['heat', 'off']
-                             and states('switch.bridge0_dhw_dhw_boost') in ['on', 'off'] %}
+                             and states('switch.bridge0_dhw_dhw_boost') in ['on', 'off']
+                             and 30 <= state_attr('climate.bridge0_dhw_dhw_setpoint', 'temperature') | float(0) <= 60 %}
           {% set started = as_timestamp(states('input_datetime.ashp_axle_started'), 0) %}
           {% set too_long = (now().timestamp() - started) > 10800 %}
           {# a real event already responded to (e.g. ended by the 3 h cap or a guard) is not started again #}
