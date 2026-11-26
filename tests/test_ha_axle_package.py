@@ -256,10 +256,52 @@ def test_import_start_raises_dhw_target_to_55_and_boosts():
     assert '"hvac_mode": "heat"' in text  # hot water switched on if it was off
 
 
-def test_restore_uses_saved_state_and_clears_marker_last():
-    text = _dump(_pkg()["script"]["ashp_axle_restore"]["sequence"])
-    assert "input_text.ashp_axle_saved" in text
-    assert text.rindex("input_text.ashp_axle_active") > text.index("switch.turn_on")
+def _seq(name: str) -> list[dict[str, Any]]:
+    return _pkg()["script"][name]["sequence"]
+
+
+def test_starts_verify_writes_and_roll_back_on_failure():
+    for name, expect in (
+        ("ashp_axle_start_export", "is_state('switch.bridge0_mode_altherma_on', 'off')"),
+        ("ashp_axle_start_import", "is_state('switch.bridge0_dhw_dhw_boost', 'on')"),
+    ):
+        seq = _seq(name)
+        loop = next(step["repeat"] for step in seq if "repeat" in step)
+        assert "repeat.index >= 2" in loop["until"]  # at most two attempts
+        waits = [st for st in loop["sequence"] if "wait_template" in st]
+        assert waits and expect in waits[0]["wait_template"] and waits[0]["continue_on_timeout"] is True
+        writes = [st for st in _dump(loop["sequence"]).split('"action"')[1:]]
+        assert all('"continue_on_error": true' in w for w in writes)  # a failed write never aborts the script
+        rollback = _dump(seq[-1])
+        assert "not wait.completed" in rollback and "script.ashp_axle_restore" in rollback
+
+
+def test_restore_clears_marker_before_reporting_and_only_when_confirmed():
+    seq = _seq("ashp_axle_restore")
+    text = _dump(seq)
+    clear = text.index('{"value": ""}')
+    assert text.index("wait_template") < clear  # restoration confirmed first
+    assert clear < text.index("logbook.log") and clear < text.rindex("notify.mobile_app_jan_mobile")
+    # unconfirmed restore: notify, keep the marker (stop before clearing) so the 5-minute tick retries
+    unconfirmed = next(st for st in seq if "if" in st and "not wait.completed" in _dump(st["if"]))
+    assert "stop" in _dump(unconfirmed["then"])
+    # reporting cannot fail the restore
+    for st in seq:
+        if st.get("action") in ("logbook.log", "notify.mobile_app_jan_mobile"):
+            assert st.get("continue_on_error") is True
+
+
+def test_restore_puts_boost_back_to_its_saved_state():
+    variables = _seq("ashp_axle_restore")[0]["variables"]
+    assert "saved.boost" in variables["want_boost"]
+    text = _dump(_seq("ashp_axle_restore"))
+    assert "switch.turn_{{ want_boost }}" in text
+    assert "switch.turn_off" not in text  # no unconditional boost-off any more
+
+
+def test_restore_targets_come_from_saved_state():
+    v = _seq("ashp_axle_restore")[0]["variables"]
+    assert "saved.on" in v["want_on"] and "saved.dhw" in v["want_dhw"] and "saved.t" in v["want_t"]
 
 
 def test_saved_state_fits_an_input_text():
